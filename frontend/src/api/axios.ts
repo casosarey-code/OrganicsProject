@@ -6,7 +6,7 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 export { API_URL, BACKEND_URL };
 
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: BACKEND_URL,
   headers: {
     'Content-Type': 'application/json',
   },
