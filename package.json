@@ -8,12 +8,13 @@
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
     "dev": "npm run dev:backend & npm run dev:frontend",
-    "build": "cd backend && npm run build && cd ../frontend && npm run build",
-    "build:backend": "cd backend && npm run build",
-    "build:frontend": "cd frontend && npm run build",
+    "build": "cd backend && npm install && npm run build && cd ../frontend && npm install && npm run build",
+    "build:backend": "cd backend && npm install && npm run build",
+    "build:frontend": "cd frontend && npm install && npm run build",
     "prisma:generate": "cd backend && npx prisma generate",
     "prisma:migrate": "cd backend && npx prisma migrate dev",
-    "prisma:push": "cd backend && npx prisma db push"
+    "prisma:push": "cd backend && npx prisma db push",
+    "start:backend": "cd backend && npm start"
   },
   "keywords": ["planillas", "react", "nodejs", "express", "prisma", "postgresql"],
   "author": "",
