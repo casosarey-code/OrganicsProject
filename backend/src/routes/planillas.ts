@@ -230,21 +230,18 @@ router.post('/', validatePermission('planillas_create'), async (req: AuthRequest
         PlanillaVentaEfectivo: data.PlanillaVentaEfectivo,
         PlanillaVentaBancos: data.PlanillaVentaBancos,
         PlanillaVentaNeta: data.PlanillaVentaNeta,
-        PlanillaEstado: data.PlanillaEstado,
         PlanillaVentaBOLD: data.PlanillaVentaBOLD,
         PlanillaVentaNEQUI: data.PlanillaVentaNEQUI,
         PlanillaVentaDAVIPLATA: data.PlanillaVentaDAVIPLATA,
         PlanillaVentaQR: data.PlanillaVentaQR,
         detalles: detallesData.length > 0 ? {
-          create: detallesData.map((d) => ({
+          create: detallesData.map((d: any) => ({
             PDProducto: d.PDProducto,
             PDCantInicial: d.PDCantInicial || 0,
             PDCantCompra: d.PDCantCompra || 0,
             PDCantAjuste: d.PDCantAjuste || 0,
-            PDCantSubtotal: d.PDCantSubtotal,
             PDCantVenta: d.PDCantVenta || 0,
             PDCantValor: d.PDCantValor || 0,
-            PDCantFinal: d.PDCantFinal,
             PDUsuarioReg: req.user!.userId,
           })),
         } : undefined,

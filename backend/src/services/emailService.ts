@@ -70,7 +70,7 @@ export async function enviarEmail(req: Request, opciones: EmailOptions) {
       opciones.html,
       opciones.adjuntos ? JSON.stringify(opciones.adjuntos) : null,
       req.body.userId || null,
-      config.SMTPID
+      (config as any).SMTPID || 1
     ]);
     
     return { success: true, messageId: info.messageId };

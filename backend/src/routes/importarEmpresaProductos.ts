@@ -139,7 +139,7 @@ router.post('/', validatePermission('empresa_planilla_update'), async (req: Auth
 });
 
 // GET /api/empresa-productos/importar/plantilla - Descargar plantilla CSV
-router.get('/plantilla', authJwt, async (req: Request, res: Response) => {
+router.get('/plantilla', authJwt, async (req: AuthRequest, res: Response) => {
   const csv = 'ProductoCodigo,EPValorProducto,EPActivo\n"COD-001",1000,true\n"COD-002",2000,true';
   
   res.setHeader('Content-Type', 'text/csv');
