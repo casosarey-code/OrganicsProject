@@ -1,0 +1,122 @@
+/* ========================================
+   GESTIONAR PERMISOS - Estilos
+======================================== */
+
+.perm-manager {
+  display: grid;
+  grid-template-columns: 250px 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 900px) {
+  .perm-manager {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Selector de rol */
+.role-selector {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+  height: fit-content;
+}
+
+.role-selector h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+
+.role-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.role-tab {
+  padding: 12px 16px;
+  text-align: left;
+  background: var(--bg-body);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.role-tab:hover {
+  background: var(--bg-hover);
+}
+
+.role-tab.active {
+  background: var(--accent-color);
+  color: white;
+  border-color: var(--accent-color);
+}
+
+/* Lista de permisos */
+.perm-list {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.perm-list h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+.perm-group {
+  margin-bottom: 24px;
+}
+
+.perm-group h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.perm-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.perm-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-body);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.perm-item:hover {
+  background: var(--bg-hover);
+}
+
+.perm-item.assigned {
+  background: #d5f4e6;
+  color: #1e8449;
+}
+
+
+.perm-item input {
+  width: auto;
+}
+
+.perm-action {
+  font-weight: 500;
+}

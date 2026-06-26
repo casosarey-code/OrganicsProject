@@ -1,0 +1,97 @@
+/* ========================================
+   ROLES Y PERMISOS - Estilos
+======================================== */
+
+.config-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 900px) {
+  .config-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.config-section {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.config-section h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+
+.items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.item-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: var(--bg-body);
+  border-radius: 8px;
+}
+
+.item-card:hover {
+  background: var(--bg-hover);
+}
+
+.item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.item-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.item-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.item-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Permisos */
+.permissions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.permission-badge {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  background: var(--bg-body);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.perm-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.perm-resource {
+  color: var(--text-secondary);
+  font-size: 11px;
+}

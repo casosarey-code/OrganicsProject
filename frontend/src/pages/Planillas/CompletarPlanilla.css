@@ -1,0 +1,173 @@
+/* ============================================
+   VERPLANILLA - Estilos de errores
+   ============================================ */
+
+/* Fila con error - toda la fila sombreado rojo */
+.data-table tbody tr.row-error {
+  background-color: #fde8e6;
+}
+
+/* Celdas con error - texto en rojo */
+.data-table tbody tr.row-error td.cell-error {
+  color: #c0392b;
+  font-weight: 600;
+}
+
+.data-table tbody tr.row-error td.cell-error input {
+  color: #c0392b;
+  font-weight: 600;
+}
+
+/* Celdas SIN error en fila con error - texto negro */
+/* Columnas: Producto, N. Inicial, Compras, Ajustes, Venta */
+.data-table tbody tr.row-error td:not(.cell-error) {
+  color: #2c3e50;
+}
+
+/* Hint de cálculo - gris */
+.data-table tbody td .calc-hint {
+  font-size: 11px;
+  color: #7f8c8d;
+}
+
+/* Botón success */
+.btn-success {
+  background-color: #27ae60;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.btn-success:hover {
+  background-color: #219a52;
+}
+
+/* Total venta bruta calculada */
+.total-bruto-calculado {
+  margin-top: 8px;
+  padding: 12px 16px;
+  background: var(--bg-body);
+  border-radius: 6px;
+  text-align: right;
+  font-size: 14px;
+  color: #7f8c8d;
+}
+
+/* Completar Planilla - Estilos */
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.planilla-info {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+}
+
+/* Tabla de inventario */
+.form-section .data-table input,
+.form-section .data-table select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.form-section .data-table .readonly,
+.form-section .data-table .readonly-input {
+  background: var(--bg-body);
+  text-align: center;
+  font-weight: 500;
+  padding: 8px;
+  border: none;
+  width: 100%;
+}
+
+.total-bruto {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--bg-body);
+  border-radius: 6px;
+  text-align: right;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.total-bruto-ayuda {
+  margin-top: 12px;
+  padding: 12px 16px;
+  background-color: #FFF3E0;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #b19485;
+  text-align: left;
+}
+
+/* Sección de evidencia */
+.file-uploaded {
+  display: block;
+  font-size: 11px;
+  color: var(--success-color);
+  margin-top: 4px;
+}
+
+/* Resumen */
+.resumen-section {
+  display: flex;
+  gap: 24px;
+  margin-top: 24px;
+}
+
+.resumen-nota {
+  flex: 0.7;
+  padding: 24px;
+  background: #fef3cd;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+}
+
+.resumen-totales {
+  flex: 0.25;
+}
+
+.totales-table {
+  width: 100%;
+  background: var(--bg-card);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.totales-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.totales-table td:last-child {
+  text-align: right;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.totales-table tr:last-child td {
+  border-bottom: none;
+}

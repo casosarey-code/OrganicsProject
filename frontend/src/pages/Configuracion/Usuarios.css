@@ -1,0 +1,30 @@
+.roles-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-body);
+  border-radius: 6px;
+}
+
+.role-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.role-checkbox:hover {
+  background: var(--bg-hover);
+}
+
+.role-checkbox input {
+  width: auto;
+  margin: 0;
+}
