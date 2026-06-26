@@ -256,15 +256,3 @@ SELECT 1, id FROM permissions;
 
 -- Insertar usuario admin por defecto (contraseña: Admin123!)
 -- La contraseña ya está hasheada con bcrypt
-INSERT INTO users (email, password_hash, full_name, is_active, is_verified) VALUES 
-    ('admin@organics.com', '$2a$10$YourHashedPasswordHere', 'Administrador', true, true);
-
--- Asignar rol admin al usuario
-INSERT INTO user_roles (user_id, role_id)
-SELECT id, 1 FROM users WHERE email = 'admin@organics.com';
-
--- Insertar parámetros generales por defecto
-INSERT INTO "ParametrosGenerales" ("PGNombrePlataforma", "PGRecuperacionPass") VALUES 
-    ('Organics Project', true);
-
-SELECT '¡Migración completada exitosamente!' AS resultado;
