@@ -74,7 +74,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <aside className="sidebar">
         <div className="sidebar-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '20px' }}>
           {platformLogo ? (
-            <img src={platformLogo} alt={platformName} style={{ maxHeight: '40px', marginBottom: '8px' }} />
+            <img src={platformLogo} alt={platformName} style={{ maxHeight: '150px', marginBottom: '0px' }} />
           ) : (
             <h2>{platformName}</h2>
           )}

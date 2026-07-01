@@ -149,3 +149,28 @@ Para enviar correos, configurar SMTP en `configuracionsmtp`:
 
 ## 📝 Licencia
 ISC
+
+
+## 🚀 Para aplicar los cambios:
+
+__1. Compila el backend:__
+
+```bash
+cd backend
+npm install --include=dev
+npm run build
+```
+
+__2. Sube al servidor:__
+
+```bash
+scp -r backend/dist backend/node_modules backend/prisma backend/package.json backend/package-lock.json root@2.25.71.62:/opt/frontend/
+```
+
+__3. En el servidor, reinicia el backend:__
+
+```bash
+pm2 restart backend
+```
+
+¿Necesitas ayuda con algún paso?

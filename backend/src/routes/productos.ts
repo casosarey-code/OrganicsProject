@@ -41,9 +41,15 @@ router.get('/', validatePermission('productos_read'), async (req: AuthRequest, r
 router.get('/:id', validatePermission('productos_read'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+    const productoId = parseInt(id);
+    
+    if (isNaN(productoId)) {
+      res.status(400).json({ error: 'ID inválido' });
+      return;
+    }
 
     const producto = await prisma.productos.findUnique({
-      where: { ProductoID: parseInt(id) },
+      where: { ProductoID: productoId },
     });
 
     if (!producto) {
@@ -146,6 +152,33 @@ router.patch('/:id/toggle-status', validatePermission('productos_create'), async
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al cambiar estado de producto' });
+  }
+});
+
+// Toggle solo contabilidad
+router.patch('/:id/toggle-solo-contabilidad', validatePermission('productos_update'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const producto = await prisma.productos.findUnique({
+      where: { ProductoID: parseInt(id) },
+      select: { ProductoSoloContabilidad: true },
+    });
+
+    if (!producto) {
+      res.status(404).json({ error: 'Producto no encontrado' });
+      return;
+    }
+
+    await prisma.productos.update({
+      where: { ProductoID: parseInt(id) },
+      data: { ProductoSoloContabilidad: !producto.ProductoSoloContabilidad },
+    });
+
+    res.json({ message: `Producto ${producto.ProductoSoloContabilidad ? 'ya no es' : 'ahora es'} solo contabilidad` });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al cambiar estado de solo contabilidad' });
   }
 });
 

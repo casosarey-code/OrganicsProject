@@ -3,7 +3,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #675959, #040304);
 }
 
 .auth-card {
@@ -11,8 +11,7 @@
   padding: 40px;
   border-radius: 8px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-  width: 100%;
-  max-width: 800px;
+  width: 90%;
 }
 
 .auth-card h1 {
@@ -137,12 +136,16 @@
   display: flex;
   justify-content: center;
   align-items: center;
+  min-height: 700px;
+  width: 45%;
+  max-width: 45%;
 }
 
 .auth-logo {
-  max-width: 200px;
-  max-height: 200px;
-  object-fit: contain;
+  width: 100%;
+  height: auto;
+  min-height: 700px;
+  object-fit: cover;
 }
 
 @media (max-width: 600px) {

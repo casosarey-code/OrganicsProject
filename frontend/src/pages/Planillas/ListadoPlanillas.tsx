@@ -10,7 +10,9 @@ export default function ListadoPlanillas() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [filters, setFilters] = useState({ fecha: '', estado: '' });
-  const isAdmin = user?.roles?.includes('admin');
+  const isAdmin = user?.roles?.some(role => 
+    typeof role === 'string' ? role === 'admin' : role.name === 'admin'
+  );
 
   const fetchPlanillas = async () => {
     setIsLoading(true);

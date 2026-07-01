@@ -1,8 +1,6 @@
 import cron from 'node-cron';
 import prisma from '../config/db';
 
-const userId = 'system'; // Usuario sistema para tareas programadas
-
 async function crearPlanillasMasivas() {
   try {
     const hoy = new Date();
@@ -10,6 +8,27 @@ async function crearPlanillasMasivas() {
 
     console.log('=== [SCHEDULER] Iniciando creación masiva de planillas ===');
     console.log('Fecha de ejecución:', new Date().toISOString());
+
+    // Buscar usuario admin para asignar como creador
+    const adminUser = await prisma.users.findFirst({
+      where: {
+        isActive: true,
+        userRoles: {
+          some: {
+            role: {
+              name: 'admin'
+            }
+          }
+        }
+      }
+    });
+
+    if (!adminUser) {
+      console.error('[SCHEDULER] No se encontró usuario admin para crear planillas');
+      return;
+    }
+
+    const userId = adminUser.id;
 
     // Buscar empresas activas dentro del rango de fechas
     const empresas = await prisma.empresas.findMany({

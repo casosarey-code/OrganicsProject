@@ -30,14 +30,6 @@ router.post('/', validatePermission('empresa_planilla_update'), async (req: Auth
       select: { UserEmpresaID: true }
     });
 
-    const userPermissions = (req as any).permissions || [];
-    const hasPermission = userPermissions.includes('empresa_planilla_update') || userPermissions.includes('empresas_update');
-    const isOwnEmpresa = requestingUser?.UserEmpresaID === empresaId;
-
-    if (!hasPermission && !isOwnEmpresa) {
-      res.status(403).json({ error: 'No tienes permiso para modificar productos de esta empresa' });
-      return;
-    }
 
     // Verificar que la empresa existe
     const empresa = await prisma.empresas.findUnique({

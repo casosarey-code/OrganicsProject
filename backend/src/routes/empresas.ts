@@ -64,10 +64,11 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
       const isOwnEmpresa = requestingUser?.UserEmpresaID === parseInt(id);
       
       // Verificar permisos del usuario (si están disponibles)
+      const isAdmin = (req as any).isAdmin === true;
       const userPermissions = (req as any).permissions || [];
       const hasPermission = userPermissions.includes('empresas_read');
 
-      if (!hasPermission && !isOwnEmpresa) {
+      if (!isAdmin && !hasPermission && !isOwnEmpresa) {
         res.status(403).json({ error: 'No tienes permiso para ver esta empresa' });
         return;
       }

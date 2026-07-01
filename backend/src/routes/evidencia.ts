@@ -8,7 +8,8 @@ const router = Router();
 // Configuración de multer para guardar archivos
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '../../public/evidencias'));
+    // Siempre usar ruta absoluta para producción
+    cb(null, '/opt/backend/public/evidencias');
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);

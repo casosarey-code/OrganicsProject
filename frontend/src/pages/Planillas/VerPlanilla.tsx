@@ -452,15 +452,9 @@ export default function VerPlanilla() {
                     {otro.POUrlEvidencia &&
                     otro.POUrlEvidencia.startsWith("/") ? (
                       <a
-                        href="#"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          window.open(
-                            otro.POUrlEvidencia,
-                            "Evidencia",
-                            "width=800,height=600",
-                          );
-                        }}
+                        href={otro.POUrlEvidencia}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         style={{
                           color: "#3498db",
                           textDecoration: "underline",

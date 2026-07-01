@@ -70,7 +70,6 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     const { fecha, puntoVenta, estado } = req.query;
     const userId = req.user!.userId;
 
-    // Obtener datos del usuario incluyendo roles
     const usuario = await prisma.users.findUnique({
       where: { id: userId },
       select: { UserEmpresaID: true, userRoles: { include: { role: true } } },
@@ -83,12 +82,10 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     if (puntoVenta) where.PlanillaPuntoVenta = parseInt(puntoVenta as string);
     if (estado) where.PlanillaEstado = estado;
 
-    // Si NO es admin, filtrar solo las planillas de su empresa
     if (!isAdmin && usuario?.UserEmpresaID) {
       where.PlanillaPuntoVenta = usuario.UserEmpresaID;
     }
 
-    // Consulta optimizada sin incluir relaciones pesadas
     const planillas = await prisma.planilla.findMany({
       where,
       select: {
@@ -126,7 +123,6 @@ router.get('/:id', validatePermission('planillas_read'), async (req: AuthRequest
     const { id } = req.params;
     const userId = req.user!.userId;
 
-    // Obtener datos del usuario
     const usuario = await prisma.users.findUnique({
       where: { id: userId },
       select: { UserEmpresaID: true, userRoles: { include: { role: true } } },
@@ -134,7 +130,6 @@ router.get('/:id', validatePermission('planillas_read'), async (req: AuthRequest
 
     const isAdmin = usuario?.userRoles.some((ur) => ur.role.name === 'admin');
 
-    // Buscar planilla
     const planilla = await prisma.planilla.findUnique({
       where: { PlanillaID: parseInt(id) },
       include: {
@@ -149,14 +144,12 @@ router.get('/:id', validatePermission('planillas_read'), async (req: AuthRequest
       },
     });
 
-    // Obtener valores de EmpresaPlanilla para cada detalle
     if (planilla) {
       const empresaId = planilla.PlanillaPuntoVenta;
       const empresaProductos = await prisma.empresaPlanilla.findMany({
         where: { EmpresaID: empresaId, EPActivo: true },
       });
 
-      // Agregar el valor desde EmpresaPlanilla a cada detalle
       (planilla.detalles as any).forEach((detalle: any) => {
         const empProd = empresaProductos.find(ep => ep.EPProducto === detalle.PDProducto);
         if (empProd) {
@@ -170,7 +163,6 @@ router.get('/:id', validatePermission('planillas_read'), async (req: AuthRequest
       return;
     }
 
-    // Si no es admin, verificar que la planilla sea de su empresa
     if (!isAdmin && usuario?.UserEmpresaID) {
       if (planilla.PlanillaPuntoVenta !== usuario.UserEmpresaID) {
         res.status(403).json({ error: 'No tienes acceso a esta planilla' });
@@ -190,14 +182,12 @@ router.post('/', validatePermission('planillas_create'), async (req: AuthRequest
     const data = createPlanillaSchema.parse(req.body);
     const userId = req.user!.userId;
 
-    // Verificar acceso
     const usuario = await prisma.users.findUnique({
       where: { id: userId },
       select: { UserEmpresaID: true, userRoles: { include: { role: true } } },
     });
     const isAdmin = usuario?.userRoles.some((ur) => ur.role.name === 'admin');
 
-    // Si no es admin, solo puede crear planillas para su empresa
     if (!isAdmin && usuario?.UserEmpresaID) {
       if (data.PlanillaPuntoVenta !== usuario.UserEmpresaID) {
         res.status(403).json({ error: 'Solo puedes crear planillas para tu empresa' });
@@ -214,8 +204,6 @@ router.post('/', validatePermission('planillas_create'), async (req: AuthRequest
       return;
     }
 
-    // Obtener productos de la empresa desde EmpresaPlanilla
-    // INCLUIR todos los productos activos (sin filtrar por ProductoSoloContabilidad)
     const empresaProductos = await prisma.empresaPlanilla.findMany({
       where: {
         EmpresaID: data.PlanillaPuntoVenta,
@@ -223,7 +211,7 @@ router.post('/', validatePermission('planillas_create'), async (req: AuthRequest
       },
     });
 
-    // Si el usuario no envía detalles, clonar desde EmpresaPlanilla
+    // INCLUIR todos los productos activos (sin filtrar por ProductoSoloContabilidad)
     const detallesData = data.detalles && data.detalles.length > 0 
       ? data.detalles
       : empresaProductos.length > 0 
@@ -292,10 +280,9 @@ router.post('/', validatePermission('planillas_create'), async (req: AuthRequest
 router.put('/:id', validatePermission('planillas_update'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const data = req.body; // Aceptar cualquier dato
+    const data = req.body;
     const userId = req.user!.userId;
 
-    // Verificar acceso
     const usuario = await prisma.users.findUnique({
       where: { id: userId },
       select: { UserEmpresaID: true, userRoles: { include: { role: true } } },
@@ -311,7 +298,6 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
       return;
     }
 
-    // Verificar acceso si no es admin
     if (!isAdmin && usuario?.UserEmpresaID) {
       if (existingPlanilla.PlanillaPuntoVenta !== usuario.UserEmpresaID) {
         res.status(403).json({ error: 'No tienes acceso a esta planilla' });
@@ -319,8 +305,6 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
       }
     }
 
-    // Obtener IDs de productos que son "Solo Contabilidad" para excluirlos de totales
-    // Usar raw query para obtener todos los productos con su campo ProductoSoloContabilidad
     const productosSoloContabilidad = await prisma.productos.findMany({
       where: {},
       select: { ProductoID: true, ProductoSoloContabilidad: true },
@@ -331,16 +315,10 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
         .map(p => p.ProductoID)
     );
     
-    console.log('Productos Solo Contabilidad IDs:', [...soloContabilidadIds]);
-    
-    // Calcular totales excluyendo productos "Solo Contabilidad"
     let ventaBruta = 0;
-    let ventaEfectivo = 0;
-    let ventaBancos = 0;
     
     if (data.detalles) {
       for (const detalle of data.detalles) {
-        // Solo incluir si NO está en la lista de Solo Contabilidad
         if (!soloContabilidadIds.has(detalle.PDProducto)) {
           const valor = Number(detalle.PDCantValor) || 0;
           ventaBruta += valor;
@@ -348,7 +326,6 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
       }
     }
     
-    // Actualizar planilla con totales recalculados (SIEMPRE recalcular, ignorar valores del frontend)
     const planilla = await prisma.planilla.update({
       where: { PlanillaID: parseInt(id) },
       data: {
@@ -367,10 +344,8 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
       },
     });
 
-    // Actualizar detalles si existen - buscar por producto para evitar problemas de orden
     if (data.detalles) {
       for (const d of data.detalles) {
-        // Buscar el detalle por PlanillaID y PDProducto
         const detalleExistente = await prisma.planillaDetalle.findFirst({
           where: {
             PlanillaID: parseInt(id),
@@ -379,7 +354,6 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
         });
         
         if (detalleExistente) {
-          // Actualizar el detalle existente usando PDID
           await prisma.planillaDetalle.update({
             where: { PDID: detalleExistente.PDID },
             data: {
@@ -393,7 +367,6 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
             },
           });
         } else {
-          // Crear nuevo detalle si no existe
           await prisma.planillaDetalle.create({
             data: {
               PlanillaID: parseInt(id),
@@ -412,12 +385,9 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
       }
     }
 
-    // Actualizar otros si existen
     if (data.otros) {
-      // Eliminar otros existentes
       await prisma.planillaOtros.deleteMany({ where: { PlanillaID: parseInt(id) } });
       
-      // Crear nuevos otros
       if (data.otros.length > 0) {
         await prisma.planillaOtros.createMany({
           data: data.otros.map((o) => ({
@@ -432,17 +402,11 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
       }
     }
 
-    // ========================================
-    // PROCESAR COMPOSICIONES AUTOMÁTICAMENTE
-    // ========================================
-    // Obtener todas las composiciones
     const composiciones = await prisma.productoComposicion.findMany({
       include: { producto: true, componente: true },
     });
 
-    // Para cada detalle, calcular cuánto suma al componente
     if (data.detalles && data.detalles.length > 0) {
-      // Crear un mapa de composiciones por producto
       const composicionMap = new Map<number, { componenteId: number; cantidad: number }[]>();
       for (const comp of composiciones) {
         if (!composicionMap.has(comp.PCProducto)) {
@@ -454,7 +418,6 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
         });
       }
 
-      // Calcular суммы por componente
       const componentesSum: Map<number, number> = new Map();
       for (const detalle of data.detalles) {
         const venta = Number(detalle.PDCantVenta) || 0;
@@ -468,38 +431,26 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
         }
       }
 
-      // Si hay composiciones, actualizar VENTA y VALOR de los componentes
       if (componentesSum.size > 0) {
-        console.log('📦 Composiciones calculadas:', Object.fromEntries(componentesSum));
-        
-        // Actualizar VENTA y VALOR de los componentes en los detalles
         for (const detalle of data.detalles) {
           if (componentesSum.has(detalle.PDProducto)) {
-            // Este producto es un componente, sumar la cantidad equivalente a la VENTA
             const sumaEquivalente = componentesSum.get(detalle.PDProducto) || 0;
             const ventaOriginal = Number(detalle.PDCantVenta) || 0;
             const nuevaVenta = ventaOriginal + sumaEquivalente;
             
-            // Calcular la suma de valores de los productos componentes
             let sumaValores = 0;
             
-            // Buscar los productos que tienen a este como componente
             for (const otroDetalle of data.detalles) {
               const comps = composicionMap.get(otroDetalle.PDProducto) || [];
               const esComponente = comps.some(c => c.componenteId === detalle.PDProducto);
               if (esComponente) {
-                // Este producto tiene al actual como componente, sumar su VALOR
                 const valorOtro = Number(otroDetalle.PDCantValor) || 0;
                 sumaValores += valorOtro;
-                console.log(`    → Sumando valor de ${otroDetalle.PDProducto}: ${valorOtro}`);
               }
             }
             
-            // Valor original + suma de valores de componentes
             const valorOriginal = Number(detalle.PDCantValor) || 0;
             const nuevoValor = valorOriginal + sumaValores;
-            
-            console.log(`  ${detalle.PDProducto}: +${sumaEquivalente} (venta: ${ventaOriginal} → ${nuevaVenta}, valor: +${sumaValores})`);
             
             await prisma.planillaDetalle.updateMany({
               where: {
@@ -516,7 +467,6 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
       }
     }
 
-    // Obtener la planilla actualizada
     const planillaActualizada = await prisma.planilla.findUnique({
       where: { PlanillaID: parseInt(id) },
       include: {
@@ -540,7 +490,6 @@ router.delete('/:id', validatePermission('planillas_delete'), async (req: AuthRe
     const { id } = req.params;
     const userId = req.user!.userId;
 
-    // Verificar acceso
     const usuario = await prisma.users.findUnique({
       where: { id: userId },
       select: { UserEmpresaID: true, userRoles: { include: { role: true } } },
@@ -556,7 +505,6 @@ router.delete('/:id', validatePermission('planillas_delete'), async (req: AuthRe
       return;
     }
 
-    // Solo admin puede eliminar
     if (!isAdmin) {
       res.status(403).json({ error: 'Solo el administrador puede eliminar planillas' });
       return;
@@ -573,7 +521,6 @@ router.delete('/:id', validatePermission('planillas_delete'), async (req: AuthRe
   }
 });
 
-// Marcar planilla como revisada
 router.patch('/:id/marcar-revisada', validatePermission('planillas_update'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -591,7 +538,7 @@ router.patch('/:id/marcar-revisada', validatePermission('planillas_update'), asy
     const planilla = await prisma.planilla.update({
       where: { PlanillaID: parseInt(id) },
       data: {
-        PlanillaEstado: 'D', // Revisado
+        PlanillaEstado: 'D',
         PlanillaAprobFecha: new Date(),
         PlanillaAprobUser: userId,
       },

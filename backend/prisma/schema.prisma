@@ -117,17 +117,33 @@ model Empresas {
 }
 
 model Productos {
-  ProductoID     Int     @id @default(autoincrement()) @map("ProductoID")
-  ProductoNombre String  @map("ProductoNombre") @db.VarChar(200)
-  ProductoCodigo String? @unique @map("ProductoCodigo") @db.VarChar(50)
-  ProductoPrecio Decimal @default(0) @map("ProductoPrecio") @db.Decimal(12, 2)
-  ProductoStock  Int     @default(0) @map("ProductoStock")
-  ProductoActivo Boolean @default(true) @map("ProductoActivo")
+  ProductoID                  Int      @id @default(autoincrement()) @map("ProductoID")
+  ProductoNombre              String   @map("ProductoNombre") @db.VarChar(200)
+  ProductoCodigo              String?  @unique @map("ProductoCodigo") @db.VarChar(50)
+  ProductoPrecio              Decimal  @default(0) @map("ProductoPrecio") @db.Decimal(12, 2)
+  ProductoStock               Int      @default(0) @map("ProductoStock")
+  ProductoActivo              Boolean  @default(true) @map("ProductoActivo")
+  ProductoSoloContabilidad    Boolean  @default(false) @map("ProductoSoloContabilidad")
 
   detalles         PlanillaDetalle[]
   empresaProductos EmpresaPlanilla[]
+  composiciones   ProductoComposicion[] @relation("ProductoPadre")
+  componentes      ProductoComposicion[] @relation("ProductoComponente")
 
   @@map("Productos")
+}
+
+model ProductoComposicion {
+  PCID          Int     @id @default(autoincrement()) @map("PCID")
+  PCProducto    Int     @map("PCProducto")
+  PCComponente  Int     @map("PCComponente")
+  PCCantidad    Decimal @default(1) @map("PCCantidad") @db.Decimal(10, 4)
+
+  producto   Productos @relation("ProductoPadre", fields: [PCProducto], references: [ProductoID], onDelete: Cascade)
+  componente Productos @relation("ProductoComponente", fields: [PCComponente], references: [ProductoID], onDelete: Cascade)
+
+  @@unique([PCProducto, PCComponente])
+  @@map("ProductoComposicion")
 }
 
 model Planilla {

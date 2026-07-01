@@ -80,7 +80,7 @@ export default function GestionarPermisos() {
   };
 
   // Agrupar permisos por recurso
-  const groupedPerms = permissions.reduce((acc: any, perm: any) => {
+  const groupedPerms: Record<string, Permission[]> = permissions.reduce((acc: Record<string, Permission[]>, perm: Permission) => {
     const resource = perm.resource || 'otro';
     if (!acc[resource]) acc[resource] = [];
     acc[resource].push(perm);

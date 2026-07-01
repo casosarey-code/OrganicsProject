@@ -47,7 +47,7 @@ export default function EmpresaProductos() {
     try {
       const [empresaData, productosEmp, productos] = await Promise.all([
         empresasApi.getById(parseInt(id!)),
-        fetch(`http://localhost:5000/api/empresa-planilla?empresaId=${id}`, {
+        fetch(`/api/empresa-planilla?empresaId=${id}`, {
           headers: getAuthHeaders(),
         }).then((r) => r.json()),
         productosApi.getAll({ activo: true }),
@@ -66,7 +66,7 @@ export default function EmpresaProductos() {
     if (!selectedProducto || !id) return;
 
     try {
-      await fetch("http://localhost:5000/api/empresa-planilla", {
+      await fetch("/api/empresa-planilla", {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -88,7 +88,7 @@ export default function EmpresaProductos() {
     if (!confirm("¿Eliminar producto de esta empresa?")) return;
 
     try {
-      await fetch(`http://localhost:5000/api/empresa-planilla/${epId}`, {
+      await fetch(`/api/empresa-planilla/${epId}`, {
         method: "DELETE",
         headers: getAuthHeaders(),
       });
@@ -100,7 +100,7 @@ export default function EmpresaProductos() {
 
   const handleToggleActivo = async (ep: EmpresaProducto) => {
     try {
-      await fetch(`http://localhost:5000/api/empresa-planilla/${ep.EPID}`, {
+      await fetch(`/api/empresa-planilla/${ep.EPID}`, {
         method: "PUT",
         headers: getAuthHeaders(),
         body: JSON.stringify({ EPActivo: !ep.EPActivo }),
