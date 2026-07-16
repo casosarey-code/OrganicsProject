@@ -110,7 +110,7 @@ export default function FormularioPlanilla() {
     } else {
       setFormData((prev) => ({
         ...prev,
-        [name]: value === '' ? 0 : parseInt(value) || 0,
+        [name]: value === '' ? 0 : parseFloat(value) || 0,
       }));
     }
   };

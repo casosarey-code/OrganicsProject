@@ -9,7 +9,7 @@ const router = Router();
 router.use(authJwt);
 
 // POST /api/empresa-productos/importar - Importar productos por empresa
-router.post('/', validatePermission('empresa_planilla_update'), async (req: AuthRequest, res: Response) => {
+router.post('/', async (req: AuthRequest, res: Response) => {
   try {
     const { empresaId, productos } = req.body;
     const userId = req.user?.userId;
@@ -90,6 +90,7 @@ router.post('/', validatePermission('empresa_planilla_update'), async (req: Auth
 
         const valorProducto = item.EPValorProducto ? parseFloat(item.EPValorProducto) : 0;
         const activo = item.EPActivo !== undefined ? item.EPActivo : true;
+        const orden = item.EPOrden !== undefined ? parseInt(item.EPOrden) : null;
 
         if (existente) {
           // Actualizar
@@ -97,7 +98,8 @@ router.post('/', validatePermission('empresa_planilla_update'), async (req: Auth
             where: { EPID: existente.EPID },
             data: {
               EPValorProducto: valorProducto,
-              EPActivo: activo
+              EPActivo: activo,
+              EPOrden: orden
             }
           });
           resultados.actualizados++;
@@ -108,6 +110,7 @@ router.post('/', validatePermission('empresa_planilla_update'), async (req: Auth
               EmpresaID: empresaId,
               EPProducto: foundProductoId!,
               EPValorProducto: valorProducto,
+              EPOrden: orden,
               EPCreaUsuario: userId || '',
               EPActivo: activo
             }
@@ -132,7 +135,7 @@ router.post('/', validatePermission('empresa_planilla_update'), async (req: Auth
 
 // GET /api/empresa-productos/importar/plantilla - Descargar plantilla CSV
 router.get('/plantilla', authJwt, async (req: AuthRequest, res: Response) => {
-  const csv = 'ProductoCodigo,EPValorProducto,EPActivo\n"COD-001",1000,true\n"COD-002",2000,true';
+  const csv = 'ProductoCodigo,EPValorProducto,EPOrden,EPActivo\n"COD-001",1000,1,true\n"COD-002",2000,2,true';
   
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename=plantilla_empresa_productos.csv');

@@ -5,16 +5,67 @@ import { Planilla } from "../../types";
 import * as XLSX from "xlsx";
 import "./CompletarPlanilla.css";
 
+interface Composicion {
+  PCID: number;
+  PCProducto: number;
+  PCComponente: number;
+  PCCantidad: number;
+  producto?: { ProductoID: number; ProductoNombre: string };
+  componente?: { ProductoID: number; ProductoNombre: string };
+}
+
 export default function VerPlanilla() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [planilla, setPlanilla] = useState<Planilla | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [composiciones, setComposiciones] = useState<Composicion[]>([]);
 
   useEffect(() => {
-    if (id) fetchPlanilla();
+    if (id) {
+      fetchPlanilla();
+      fetchComposiciones();
+    }
   }, [id]);
+
+  // Función para cargar composiciones del backend
+  const fetchComposiciones = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/productos/composicion', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setComposiciones(data);
+      }
+    } catch (err) {
+      console.error('Error al cargar composiciones:', err);
+    }
+  };
+
+  // Calcular impacto de composiciones
+  const calcularImpactoComposiciones = (detalles: any[]): Map<number, number> => {
+    const impacto = new Map<number, number>();
+    
+    detalles.forEach((detalle) => {
+      const venta = Number(detalle.PDCantVenta) || 0;
+      if (venta <= 0) return;
+      
+      const productoId = Number(detalle.PDProducto);
+      const composicionesDondeEsComponente = composiciones.filter(c => c.PCComponente === productoId);
+      
+      composicionesDondeEsComponente.forEach(comp => {
+        const padreId = comp.PCProducto;
+        const cantidadEquivalente = venta * comp.PCCantidad;
+        const impactoActual = impacto.get(padreId) || 0;
+        impacto.set(padreId, impactoActual - cantidadEquivalente);
+      });
+    });
+    
+    return impacto;
+  };
 
   const fetchPlanilla = async () => {
     setIsLoading(true);
@@ -202,22 +253,26 @@ export default function VerPlanilla() {
     doc.save(`planilla_${empresa}_${fecha}.pdf`);
   };
 
-  // Función para validar errores en detalles
-  const validarDetalle = (detalle: any) => {
+  // Función para validar errores en detalles (con composiciones)
+  const validarDetalle = (detalle: any, impactoComposiciones: Map<number, number> = new Map()) => {
     const subtotalCalculado =
       (Number(detalle.PDCantInicial) || 0) +
       (Number(detalle.PDCantCompra) || 0) -
       (Number(detalle.PDCantAjuste) || 0);
     const subtotalRegistrado = Number(detalle.PDCantSubtotal) || 0;
     const errorSubtotal = subtotalCalculado !== subtotalRegistrado;
+    
+    // Incluir impacto de composiciones en el cálculo del N. Final
+    const impactoPadre = impactoComposiciones.get(Number(detalle.PDProducto)) || 0;
     const finalCalculado =
-      subtotalCalculado - (Number(detalle.PDCantVenta) || 0);
+      subtotalCalculado - (Number(detalle.PDCantVenta) || 0) + impactoPadre;
     const finalRegistrado = Number(detalle.PDCantFinal) || 0;
-    const errorFinal = finalCalculado !== finalRegistrado;
+    const errorFinal = Math.abs(finalCalculado - finalRegistrado) > 0.01;
+    
     const valorCalculado =
       (Number(detalle.valorEmpresa) || 0) * (Number(detalle.PDCantVenta) || 0);
     const valorRegistrado = Number(detalle.PDCantValor) || 0;
-    const errorValor = valorCalculado !== valorRegistrado;
+    const errorValor = Math.abs(valorCalculado - valorRegistrado) > 0.01;
     return {
       errorSubtotal,
       errorFinal,
@@ -225,22 +280,26 @@ export default function VerPlanilla() {
       subtotalCalculado,
       finalCalculado,
       valorCalculado,
+      impactoPadre,
     };
   };
 
   const calcularTotales = () => {
     if (!planilla) return { totalBruto: 0, totalBrutoCalc: 0, efectivo: 0, bancos: 0, total: 0 };
-    // Total venta bruta = suma de PDCantValor (lo registrado)
-    const totalBruto = (planilla.detalles || []).reduce(
+    
+    const detalles = planilla.detalles || [];
+    
+    // Total venta bruta = suma de PDCantValor (TODOS los productos)
+    const totalBruto = detalles.reduce(
       (sum, d) => sum + (Number(d.PDCantValor) || 0),
       0,
     );
-    // Total venta bruta calculada = suma de (valorEmpresa × PDCantVenta)
-    const totalBrutoCalc = (planilla.detalles || []).reduce(
-      (sum, d) =>
-        sum + (Number(d.valorEmpresa) || 0) * (Number(d.PDCantVenta) || 0),
+    // Total venta bruta calculada = suma de (valorEmpresa × PDCantVenta) (TODOS los productos)
+    const totalBrutoCalc = detalles.reduce(
+      (sum, d) => sum + (Number(d.valorEmpresa) || 0) * (Number(d.PDCantVenta) || 0),
       0,
     );
+    
     const otros = planilla.otros || [];
     const otrosGastos = otros
       .filter((o) =>
@@ -279,6 +338,14 @@ export default function VerPlanilla() {
 
   if (isLoading) return <div className="loading">Cargando...</div>;
   if (!planilla) return <div className="no-data">Planilla no encontrada</div>;
+
+  // Calcular impacto de composiciones para la validación
+  const impactoComposiciones = calcularImpactoComposiciones(planilla.detalles || []);
+
+  // Función para verificar si es producto padre
+  const isProductoPadre = (productoId: number): boolean => {
+    return composiciones.some(c => c.PCProducto === productoId);
+  };
 
   return (
     <div className="page-container">
@@ -342,12 +409,19 @@ export default function VerPlanilla() {
                 subtotalCalculado,
                 finalCalculado,
                 valorCalculado,
-              } = validarDetalle(detalle);
+                impactoPadre,
+              } = validarDetalle(detalle, impactoComposiciones);
               // Marca fila completa si hay error en Subtotal, Final o Valor
               const errorFila = errorSubtotal || errorFinal || errorValor;
+              const soloContabilidad = detalle.producto?.ProductoSoloContabilidad;
+              const esPadre = isProductoPadre(Number(detalle.PDProducto));
               return (
-                <tr key={index} className={errorFila ? "row-error" : ""}>
-                  <td>{detalle.producto?.ProductoNombre || "Producto"}</td>
+                <tr key={index} className={`${errorFila ? "row-error" : ""} ${soloContabilidad ? "row-solo-contabilidad" : ""} ${esPadre ? "row-padre" : ""}`}>
+                  <td>
+                    {detalle.producto?.ProductoNombre || "Producto"}
+                    {soloContabilidad && <span style={{ color: '#666', fontSize: '0.8em', marginLeft: '5px' }}>(Solo Contabilidad)</span>}
+                    {esPadre && <span style={{fontSize:'0.7em', marginLeft:'5px'}}>📦</span>}
+                  </td>
                   <td>
                     <input
                       type="tel"

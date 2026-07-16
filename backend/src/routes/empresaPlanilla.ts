@@ -12,18 +12,20 @@ const createEmpresaPlanillaSchema = z.object({
   EmpresaID: z.number().int().positive(),
   EPProducto: z.number().int().positive(),
   EPValorProducto: z.number().min(0),
+  EPOrden: z.number().int().min(0).optional(),
 });
 
 const updateEmpresaPlanillaSchema = z.object({
   EPValorProducto: z.number().min(0).optional(),
   EPActivo: z.boolean().optional(),
+  EPOrden: z.number().int().min(0).optional(),
 });
 
 // Middleware de autenticación
 router.use(authJwt);
 
 // GET /api/empresa-planilla - Listar todos los productos por empresa
-router.get('/', validateRole('admin', 'editor', 'viewer'), async (req: AuthRequest, res: Response) => {
+router.get('/', async (req: AuthRequest, res: Response) => {
   try {
     const { empresaId } = req.query;
     const where: any = {};
@@ -60,7 +62,7 @@ router.get('/', validateRole('admin', 'editor', 'viewer'), async (req: AuthReque
 });
 
 // GET /api/empresa-planilla/empresa/:id - Obtener productos de una empresa específica
-router.get('/empresa/:id', validateRole('admin', 'editor', 'viewer'), async (req: AuthRequest, res: Response) => {
+router.get('/empresa/:id', validateRole('Admin', 'editor', 'viewer'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -88,7 +90,7 @@ router.get('/empresa/:id', validateRole('admin', 'editor', 'viewer'), async (req
 });
 
 // POST /api/empresa-planilla - Crear nuevo registro
-router.post('/', validateRole('admin', 'editor'), async (req: AuthRequest, res: Response) => {
+router.post('/', async (req: AuthRequest, res: Response) => {
   try {
     const data = createEmpresaPlanillaSchema.parse(req.body);
 
@@ -132,6 +134,7 @@ router.post('/', validateRole('admin', 'editor'), async (req: AuthRequest, res: 
         EmpresaID: data.EmpresaID,
         EPProducto: data.EPProducto,
         EPValorProducto: data.EPValorProducto,
+        EPOrden: data.EPOrden,
         EPCreaUsuario: req.user!.userId,
       },
       include: {
@@ -156,7 +159,7 @@ router.post('/', validateRole('admin', 'editor'), async (req: AuthRequest, res: 
 });
 
 // PUT /api/empresa-planilla/:id - Actualizar registro
-router.put('/:id', validateRole('admin', 'editor'), async (req: AuthRequest, res: Response) => {
+router.put('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const data = updateEmpresaPlanillaSchema.parse(req.body);
@@ -195,7 +198,7 @@ router.put('/:id', validateRole('admin', 'editor'), async (req: AuthRequest, res
 });
 
 // DELETE /api/empresa-planilla/:id - Eliminar registro
-router.delete('/:id', validateRole('admin'), async (req: AuthRequest, res: Response) => {
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 

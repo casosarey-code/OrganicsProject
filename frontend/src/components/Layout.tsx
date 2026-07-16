@@ -97,6 +97,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   Planillas
                 </Link>
               )}
+              {hasPermission('planillas_pv_ver') && (
+                <Link
+                  to="/planillas-pv"
+                  className={`nav-item ${isActive('/planillas-pv') ? 'active' : ''}`}
+                >
+                  Mis Planillas
+                </Link>
+              )}
               {hasPermission('analitica_read') && (
                 <Link
                   to="/analitica"
@@ -126,6 +134,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   className={`nav-item ${isActive('/planillas') ? 'active' : ''}`}
                 >
                   Planillas
+                </Link>
+              )}
+              {hasPermission('planillas_pv_ver') && (
+                <Link
+                  to="/planillas-pv"
+                  className={`nav-item ${isActive('/planillas-pv') ? 'active' : ''}`}
+                >
+                  Mis Planillas
                 </Link>
               )}
               {hasPermission('analitica_read') && (

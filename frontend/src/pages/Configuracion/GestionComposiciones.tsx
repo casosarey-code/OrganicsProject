@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { productosApi } from '../../api';
 import { Producto } from '../../types';
 
@@ -12,10 +13,12 @@ interface Composicion {
 }
 
 interface Props {
-  onBack: () => void;
+  onBack?: () => void;
 }
 
-export default function GestionComposiciones({ onBack }: Props) {
+export default function GestionComposiciones({ onBack }: Props = {}) {
+  const navigate = useNavigate();
+  const goBack = onBack || (() => navigate('/config/productos'));
   const [composiciones, setComposiciones] = useState<Composicion[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -77,8 +80,8 @@ export default function GestionComposiciones({ onBack }: Props) {
       }
       setShowForm(false);
       setFormData({ PCProducto: 0, PCComponente: 0, PCCantidad: 1 });
-      // Recargar la página para mostrar la nueva composición
-      window.location.reload();
+      // Recargar solo los datos para mantener la vista
+      fetchData();
     } catch (err: any) {
       setError(err.message || 'Error al guardar');
     }
@@ -117,7 +120,7 @@ export default function GestionComposiciones({ onBack }: Props) {
     <div className="page-container">
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          <button onClick={onBack} className="btn btn-secondary">← Volver</button>
+          <button onClick={goBack} className="btn btn-secondary">← Volver</button>
           <h1>Gestión de Composiciones</h1>
         </div>
         <button onClick={() => setShowForm(true)} className="btn btn-primary">

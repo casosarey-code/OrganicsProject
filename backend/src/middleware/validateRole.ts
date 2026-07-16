@@ -27,7 +27,7 @@ export const validateRole = (...allowedRoles: string[]) => {
 
       if (!hasRole) {
         res.status(403).json({
-          error: 'No tienes permisos para realizar esta acción',
+          error: 'ACCESO DENEGADO - validar con administrador (rol)',
           requiredRoles: allowedRoles,
         });
         return;

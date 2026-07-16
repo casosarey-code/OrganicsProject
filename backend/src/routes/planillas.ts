@@ -4,27 +4,28 @@ import { authJwt, AuthRequest } from '../middleware/authJwt';
 import { validateRole } from '../middleware/validateRole';
 import { validatePermission } from '../middleware/validatePermission';
 import { z } from 'zod';
+import { obtenerNFinalAnterior } from '../services/planillaService';
 
 const router = Router();
 
 const createPlanillaSchema = z.object({
   PlanillaFecha: z.string().optional(),
   PlanillaFechaVencimiento: z.string().optional().nullable(),
-  PlanillaPuntoVenta: z.number().int().positive(),
-  PlanillaVentaBruta: z.number().int().optional().nullable(),
-  PlanillaVentaEfectivo: z.number().int().optional().nullable(),
-  PlanillaVentaBancos: z.number().int().optional().nullable(),
-  PlanillaVentaNeta: z.number().int().optional().nullable(),
-  PlanillaVentaBOLD: z.number().int().optional().nullable(),
-  PlanillaVentaNEQUI: z.number().int().optional().nullable(),
-  PlanillaVentaDAVIPLATA: z.number().int().optional().nullable(),
-  PlanillaVentaQR: z.number().int().optional().nullable(),
+  PlanillaPuntoVenta: z.number().positive(),
+  PlanillaVentaBruta: z.number().optional().nullable(),
+  PlanillaVentaEfectivo: z.number().optional().nullable(),
+  PlanillaVentaBancos: z.number().optional().nullable(),
+  PlanillaVentaNeta: z.number().optional().nullable(),
+  PlanillaVentaBOLD: z.number().optional().nullable(),
+  PlanillaVentaNEQUI: z.number().optional().nullable(),
+  PlanillaVentaDAVIPLATA: z.number().optional().nullable(),
+  PlanillaVentaQR: z.number().optional().nullable(),
   detalles: z.array(z.object({
-    PDProducto: z.number().int().positive(),
-    PDCantInicial: z.number().int().min(0).default(0),
-    PDCantCompra: z.number().int().min(0).default(0),
-    PDCantAjuste: z.number().int().min(0).default(0),
-    PDCantVenta: z.number().int().min(0).default(0),
+    PDProducto: z.number().positive(),
+    PDCantInicial: z.number().min(0).default(0),
+    PDCantCompra: z.number().min(0).default(0),
+    PDCantAjuste: z.number().min(0).default(0),
+    PDCantVenta: z.number().min(0).default(0),
     PDCantValor: z.number().optional(),
   })).optional(),
   otros: z.array(z.object({
@@ -38,21 +39,21 @@ const createPlanillaSchema = z.object({
 const updatePlanillaSchema = z.object({
   PlanillaFecha: z.string().optional(),
   PlanillaFechaVencimiento: z.string().optional().nullable(),
-  PlanillaPuntoVenta: z.number().int().positive().optional(),
-  PlanillaVentaBruta: z.number().int().optional().nullable(),
-  PlanillaVentaEfectivo: z.number().int().optional().nullable(),
-  PlanillaVentaBancos: z.number().int().optional().nullable(),
-  PlanillaVentaNeta: z.number().int().optional().nullable(),
-  PlanillaVentaBOLD: z.number().int().optional().nullable(),
-  PlanillaVentaNEQUI: z.number().int().optional().nullable(),
-  PlanillaVentaDAVIPLATA: z.number().int().optional().nullable(),
-  PlanillaVentaQR: z.number().int().optional().nullable(),
+  PlanillaPuntoVenta: z.number().positive().optional(),
+  PlanillaVentaBruta: z.number().optional().nullable(),
+  PlanillaVentaEfectivo: z.number().optional().nullable(),
+  PlanillaVentaBancos: z.number().optional().nullable(),
+  PlanillaVentaNeta: z.number().optional().nullable(),
+  PlanillaVentaBOLD: z.number().optional().nullable(),
+  PlanillaVentaNEQUI: z.number().optional().nullable(),
+  PlanillaVentaDAVIPLATA: z.number().optional().nullable(),
+  PlanillaVentaQR: z.number().optional().nullable(),
   detalles: z.array(z.object({
-    PDProducto: z.number().int(),
-    PDCantInicial: z.number().int().optional(),
-    PDCantCompra: z.number().int().optional(),
-    PDCantAjuste: z.number().int().optional(),
-    PDCantVenta: z.number().int().optional(),
+    PDProducto: z.number(),
+    PDCantInicial: z.number().optional(),
+    PDCantCompra: z.number().optional(),
+    PDCantAjuste: z.number().optional(),
+    PDCantVenta: z.number().optional(),
     PDCantValor: z.number().optional(),
   })).optional(),
   otros: z.array(z.object({
@@ -65,7 +66,7 @@ const updatePlanillaSchema = z.object({
 
 router.use(authJwt);
 
-router.get('/', async (req: AuthRequest, res: Response) => {
+router.get('/', validatePermission('planillas_pv_ver'), async (req: AuthRequest, res: Response) => {
   try {
     const { fecha, puntoVenta, estado } = req.query;
     const userId = req.user!.userId;
@@ -83,10 +84,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     if (puntoVenta) where.PlanillaPuntoVenta = parseInt(puntoVenta as string);
     if (estado) where.PlanillaEstado = estado;
 
-    // Si NO es admin, filtrar solo las planillas de su empresa
-    if (!isAdmin && usuario?.UserEmpresaID) {
-      where.PlanillaPuntoVenta = usuario.UserEmpresaID;
-    }
+    // Todas las planillas sin filtro de empresa
 
     // Consulta optimizada sin incluir relaciones pesadas
     const planillas = await prisma.planilla.findMany({
@@ -121,7 +119,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.get('/:id', validatePermission('planillas_read'), async (req: AuthRequest, res: Response) => {
+router.get('/:id', validatePermission('planillas_update'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user!.userId;
@@ -143,7 +141,7 @@ router.get('/:id', validatePermission('planillas_read'), async (req: AuthRequest
         aprobUser: { select: { id: true, fullName: true } },
         detalles: {
           include: { producto: true },
-          orderBy: { PDID: 'asc' },
+          orderBy: { PDOrden: 'asc' },
         },
         otros: true,
       },
@@ -215,31 +213,66 @@ router.post('/', validatePermission('planillas_create'), async (req: AuthRequest
     }
 
     // Obtener productos de la empresa desde EmpresaPlanilla
-    // INCLUIR todos los productos activos (sin filtrar por ProductoSoloContabilidad)
+    // INCLUIR productos con su información (para verificar SoloContabilidad)
     const empresaProductos = await prisma.empresaPlanilla.findMany({
       where: {
         EmpresaID: data.PlanillaPuntoVenta,
         EPActivo: true,
       },
+      select: {
+        EPProducto: true,
+        EPOrden: true,
+        producto: {
+          select: {
+            ProductoID: true,
+            ProductoSoloContabilidad: true,
+          },
+        },
+      },
+      orderBy: { EPOrden: 'asc' },
     });
 
-    // Si el usuario no envía detalles, clonar desde EmpresaPlanilla
+    // Obtener N. Final de la planilla anterior (estado C o D)
+    console.log(`[POST planilla] EmpresaID: ${data.PlanillaPuntoVenta}, Buscando N. Final...`);
+    const nFinalAnterior = await obtenerNFinalAnterior(data.PlanillaPuntoVenta);
+    console.log(`[POST planilla] N. Final encontrado: ${nFinalAnterior.size} productos`);
+
+    // Si el usuario no envía detalles, clonar desde EmpresaPlanilla con N. Final anterior
     const detallesData = data.detalles && data.detalles.length > 0 
       ? data.detalles
       : empresaProductos.length > 0 
-        ? empresaProductos.map((ep) => ({
-          PDProducto: ep.EPProducto,
-          PDCantInicial: 0,
-          PDCantCompra: 0,
-          PDCantAjuste: 0,
-          PDCantVenta: 0,
-          PDCantValor: 0,
-        }))
+        ? empresaProductos.map((ep) => {
+          // Si el producto es SoloContabilidad, usar N.Inicial = 0
+          // De lo contrario, usar el N.Final de la planilla anterior
+          const esSoloContabilidad = ep.producto?.ProductoSoloContabilidad === true;
+          const nInicial = esSoloContabilidad ? 0 : (nFinalAnterior.get(ep.EPProducto) || 0);
+          return {
+            PDProducto: ep.EPProducto,
+            PDCantInicial: nInicial,
+            PDCantCompra: 0,
+            PDCantAjuste: 0,
+            PDCantSubtotal: nInicial, // Subtotal = Inicial
+            PDCantVenta: 0,
+            PDCantValor: 0,
+            PDCantFinal: nInicial, // Final = Inicial
+            PDOrden: ep.EPOrden,
+          };
+        })
         : [];
+
+    // Crear fecha con hora local del servidor (sin timezone)
+    const crearFechaLocal = (fechaStr?: string) => {
+      if (!fechaStr) {
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
+      }
+      const [year, month, day] = fechaStr.split('T')[0].split('-').map(Number);
+      return new Date(year, month - 1, day, 12, 0, 0);
+    };
 
     const planilla = await prisma.planilla.create({
       data: {
-        PlanillaFecha: data.PlanillaFecha ? new Date(data.PlanillaFecha) : new Date(),
+        PlanillaFecha: crearFechaLocal(data.PlanillaFecha),
         PlanillaFechaVencimiento: data.PlanillaFechaVencimiento ? new Date(data.PlanillaFechaVencimiento) : null,
         PlanillaPuntoVenta: data.PlanillaPuntoVenta,
         PlanillaCreaUsuario: req.user!.userId,
@@ -257,8 +290,11 @@ router.post('/', validatePermission('planillas_create'), async (req: AuthRequest
             PDCantInicial: d.PDCantInicial || 0,
             PDCantCompra: d.PDCantCompra || 0,
             PDCantAjuste: d.PDCantAjuste || 0,
+            PDCantSubtotal: d.PDCantSubtotal ?? (d.PDCantInicial || 0),
             PDCantVenta: d.PDCantVenta || 0,
             PDCantValor: d.PDCantValor || 0,
+            PDCantFinal: d.PDCantFinal ?? (d.PDCantInicial || 0),
+            PDOrden: d.PDOrden,
             PDUsuarioReg: req.user!.userId,
           })),
         } : undefined,
@@ -319,46 +355,17 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
       }
     }
 
-    // Obtener IDs de productos que son "Solo Contabilidad" para excluirlos de totales
-    // Usar raw query para obtener todos los productos con su campo ProductoSoloContabilidad
-    const productosSoloContabilidad = await prisma.productos.findMany({
-      where: {},
-      select: { ProductoID: true, ProductoSoloContabilidad: true },
-    });
-    const soloContabilidadIds = new Set(
-      productosSoloContabilidad
-        .filter(p => p.ProductoSoloContabilidad === true)
-        .map(p => p.ProductoID)
-    );
-    
-    console.log('Productos Solo Contabilidad IDs:', [...soloContabilidadIds]);
-    
-    // Calcular totales excluyendo productos "Solo Contabilidad"
-    let ventaBruta = 0;
-    let ventaEfectivo = 0;
-    let ventaBancos = 0;
-    
-    if (data.detalles) {
-      for (const detalle of data.detalles) {
-        // Solo incluir si NO está en la lista de Solo Contabilidad
-        if (!soloContabilidadIds.has(detalle.PDProducto)) {
-          const valor = Number(detalle.PDCantValor) || 0;
-          ventaBruta += valor;
-        }
-      }
-    }
-    
-    // Actualizar planilla con totales recalculados (SIEMPRE recalcular, ignorar valores del frontend)
+    // Actualizar planilla con totales del frontend (NO recalcular)
     const planilla = await prisma.planilla.update({
       where: { PlanillaID: parseInt(id) },
       data: {
         PlanillaFecha: data.PlanillaFecha ? new Date(data.PlanillaFecha) : undefined,
         PlanillaFechaVencimiento: data.PlanillaFechaVencimiento ? new Date(data.PlanillaFechaVencimiento) : null,
         PlanillaPuntoVenta: data.PlanillaPuntoVenta,
-        PlanillaVentaBruta: ventaBruta,
-        PlanillaVentaEfectivo: data.PlanillaVentaEfectivo ?? ventaBruta,
+        PlanillaVentaBruta: data.PlanillaVentaBruta ?? 0,
+        PlanillaVentaEfectivo: data.PlanillaVentaEfectivo ?? 0,
         PlanillaVentaBancos: data.PlanillaVentaBancos ?? 0,
-        PlanillaVentaNeta: ventaBruta,
+        PlanillaVentaNeta: data.PlanillaVentaNeta ?? 0,
         PlanillaEstado: data.PlanillaEstado,
         PlanillaVentaBOLD: data.PlanillaVentaBOLD,
         PlanillaVentaNEQUI: data.PlanillaVentaNEQUI,
@@ -432,97 +439,13 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
       }
     }
 
-    // ========================================
-    // PROCESAR COMPOSICIONES AUTOMÁTICAMENTE
-    // ========================================
-    // Obtener todas las composiciones
-    const composiciones = await prisma.productoComposicion.findMany({
-      include: { producto: true, componente: true },
-    });
-
-    // Para cada detalle, calcular cuánto suma al componente
-    if (data.detalles && data.detalles.length > 0) {
-      // Crear un mapa de composiciones por producto
-      const composicionMap = new Map<number, { componenteId: number; cantidad: number }[]>();
-      for (const comp of composiciones) {
-        if (!composicionMap.has(comp.PCProducto)) {
-          composicionMap.set(comp.PCProducto, []);
-        }
-        composicionMap.get(comp.PCProducto)!.push({
-          componenteId: comp.PCComponente,
-          cantidad: Number(comp.PCCantidad),
-        });
-      }
-
-      // Calcular суммы por componente
-      const componentesSum: Map<number, number> = new Map();
-      for (const detalle of data.detalles) {
-        const venta = Number(detalle.PDCantVenta) || 0;
-        const comps = composicionMap.get(detalle.PDProducto) || [];
-        for (const comp of comps) {
-          const suma = venta * comp.cantidad;
-          componentesSum.set(
-            comp.componenteId,
-            (componentesSum.get(comp.componenteId) || 0) + suma
-          );
-        }
-      }
-
-      // Si hay composiciones, actualizar VENTA y VALOR de los componentes
-      if (componentesSum.size > 0) {
-        console.log('📦 Composiciones calculadas:', Object.fromEntries(componentesSum));
-        
-        // Actualizar VENTA y VALOR de los componentes en los detalles
-        for (const detalle of data.detalles) {
-          if (componentesSum.has(detalle.PDProducto)) {
-            // Este producto es un componente, sumar la cantidad equivalente a la VENTA
-            const sumaEquivalente = componentesSum.get(detalle.PDProducto) || 0;
-            const ventaOriginal = Number(detalle.PDCantVenta) || 0;
-            const nuevaVenta = ventaOriginal + sumaEquivalente;
-            
-            // Calcular la suma de valores de los productos componentes
-            let sumaValores = 0;
-            
-            // Buscar los productos que tienen a este como componente
-            for (const otroDetalle of data.detalles) {
-              const comps = composicionMap.get(otroDetalle.PDProducto) || [];
-              const esComponente = comps.some(c => c.componenteId === detalle.PDProducto);
-              if (esComponente) {
-                // Este producto tiene al actual como componente, sumar su VALOR
-                const valorOtro = Number(otroDetalle.PDCantValor) || 0;
-                sumaValores += valorOtro;
-                console.log(`    → Sumando valor de ${otroDetalle.PDProducto}: ${valorOtro}`);
-              }
-            }
-            
-            // Valor original + suma de valores de componentes
-            const valorOriginal = Number(detalle.PDCantValor) || 0;
-            const nuevoValor = valorOriginal + sumaValores;
-            
-            console.log(`  ${detalle.PDProducto}: +${sumaEquivalente} (venta: ${ventaOriginal} → ${nuevaVenta}, valor: +${sumaValores})`);
-            
-            await prisma.planillaDetalle.updateMany({
-              where: {
-                PlanillaID: parseInt(id),
-                PDProducto: detalle.PDProducto,
-              },
-              data: {
-                PDCantVenta: nuevaVenta,
-                PDCantValor: nuevoValor,
-              },
-            });
-          }
-        }
-      }
-    }
-
     // Obtener la planilla actualizada
     const planillaActualizada = await prisma.planilla.findUnique({
       where: { PlanillaID: parseInt(id) },
       include: {
         detalles: { 
           include: { producto: true },
-          orderBy: { PDID: 'asc' },
+          orderBy: { PDOrden: 'asc' },
         },
         otros: true,
       },
