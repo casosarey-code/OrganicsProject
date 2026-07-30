@@ -14,7 +14,17 @@ export default function FormularioPlanilla() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Función para calcular fecha de vencimiento (3 días después)
+  const getFechaVencimiento = (fechaPlanilla: string) => {
+    if (!fechaPlanilla) return '';
+    const fecha = new Date(fechaPlanilla);
+    fecha.setDate(fecha.getDate() + 3);
+    return fecha.toISOString().split('T')[0];
+  };
+
   const [formData, setFormData] = useState<CreatePlanillaDTO>({
+    PlanillaFecha: new Date().toISOString().split('T')[0],
+    PlanillaFechaVencimiento: getFechaVencimiento(new Date().toISOString().split('T')[0]),
     PlanillaPuntoVenta: 0,
     PlanillaVentaBruta: 0,
     PlanillaVentaEfectivo: 0,
@@ -53,7 +63,8 @@ export default function FormularioPlanilla() {
           const planilla: Planilla = await planillasApi.getById(parseInt(id));
           setFormData({
             PlanillaPuntoVenta: planilla.PlanillaPuntoVenta,
-            PlanillaFecha: planilla.PlanillaFecha,
+            PlanillaFecha: planilla.PlanillaFecha?.split('T')[0] || '',
+            PlanillaFechaVencimiento: planilla.PlanillaFechaVencimiento?.split('T')[0] || '',
             PlanillaVentaBruta: planilla.PlanillaVentaBruta || 0,
             PlanillaVentaEfectivo: planilla.PlanillaVentaEfectivo || 0,
             PlanillaVentaBancos: planilla.PlanillaVentaBancos || 0,
@@ -89,12 +100,30 @@ export default function FormularioPlanilla() {
   }, [id, isEditing]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value === '' ? 0 : parseInt(value) || 0,
-    }));
+    const { name, value, type } = e.target;
+    // Para campos de fecha, mantener como string
+    if (type === 'date') {
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value === '' ? 0 : parseFloat(value) || 0,
+      }));
+    }
   };
+
+  // Actualizar fecha de vencimiento cuando cambie la fecha de planilla (solo en creación)
+  useEffect(() => {
+    if (!isEditing && formData.PlanillaFecha) {
+      setFormData((prev) => ({
+        ...prev,
+        PlanillaFechaVencimiento: getFechaVencimiento(prev.PlanillaFecha || ''),
+      }));
+    }
+  }, [formData.PlanillaFecha, isEditing]);
 
   const handleDetalleChange = (index: number, field: string, value: number) => {
     setFormData((prev) => {
@@ -178,6 +207,28 @@ export default function FormularioPlanilla() {
       <form onSubmit={handleSubmit} className="planilla-form">
         <div className="form-section">
           <h3>Información General</h3>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label>Fecha de Planilla *</label>
+              <input
+                type="date"
+                name="PlanillaFecha"
+                value={formData.PlanillaFecha || ''}
+                onChange={handleChange}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label>Fecha de Vencimiento</label>
+              <input
+                type="date"
+                name="PlanillaFechaVencimiento"
+                value={formData.PlanillaFechaVencimiento || ''}
+                onChange={handleChange}
+              />
+            </div>
+          </div>
 
           <div className="form-row">
             <div className="form-group">

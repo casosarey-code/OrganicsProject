@@ -26,6 +26,7 @@ import analiticaRoutes from './routes/analitica';
 import tareaProgramadaRoutes from './routes/tareaProgramada';
 import importarProductosRoutes from './routes/importarProductos';
 import importarEmpresaProductosRoutes from './routes/importarEmpresaProductos';
+import productoComposicionRoutes from './routes/productoComposicion';
 import { initScheduler } from './services/scheduler';
 import { seedPermissions } from './config/seedPermisos';
 
@@ -46,7 +47,7 @@ app.use(generalRateLimiter);
 app.use(express.json({ limit: '10kb' })); // Limitar tamaño del body
 
 // Servir archivos estáticos de evidencias
-app.use('/evidencias', express.static(path.join(__dirname, '../public/evidencias')));
+app.use('/evidencias', express.static('/opt/backend/public/evidencias'));
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -57,6 +58,7 @@ app.use('/api/auth', authRecoveryRoutes);
 app.use('/api/planillas', planillasRoutes);
 app.use('/api/empresas', empresasRoutes);
 app.use('/api/empresa-planilla', empresaPlanillaRoutes);
+app.use('/api/productos/composicion', productoComposicionRoutes);
 app.use('/api/productos', productosRoutes);
 app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/roles', rolesRoutes);
@@ -80,10 +82,9 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 const PORT = config.port;
 
 app.listen(PORT, async () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Environment: ${config.nodeEnv}`);
-
   try {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Environment: ${config.nodeEnv}`);
     await prisma.$connect();
     console.log('Database connected successfully');
     await seedPermissions();

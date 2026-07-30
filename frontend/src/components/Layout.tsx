@@ -74,7 +74,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <aside className="sidebar">
         <div className="sidebar-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '20px' }}>
           {platformLogo ? (
-            <img src={platformLogo} alt={platformName} style={{ maxHeight: '40px', marginBottom: '8px' }} />
+            <img src={platformLogo} alt={platformName} style={{ maxHeight: '150px', marginBottom: '0px' }} />
           ) : (
             <h2>{platformName}</h2>
           )}
@@ -95,6 +95,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   className={`nav-item ${isActive('/planillas') ? 'active' : ''}`}
                 >
                   Planillas
+                </Link>
+              )}
+              {hasPermission('planillas_pv_ver') && (
+                <Link
+                  to="/planillas-pv"
+                  className={`nav-item ${isActive('/planillas-pv') ? 'active' : ''}`}
+                >
+                  Mis Planillas
                 </Link>
               )}
               {hasPermission('analitica_read') && (
@@ -126,6 +134,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   className={`nav-item ${isActive('/planillas') ? 'active' : ''}`}
                 >
                   Planillas
+                </Link>
+              )}
+              {hasPermission('planillas_pv_ver') && (
+                <Link
+                  to="/planillas-pv"
+                  className={`nav-item ${isActive('/planillas-pv') ? 'active' : ''}`}
+                >
+                  Mis Planillas
                 </Link>
               )}
               {hasPermission('analitica_read') && (

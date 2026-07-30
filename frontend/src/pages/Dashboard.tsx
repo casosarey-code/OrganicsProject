@@ -6,7 +6,7 @@ import { Planilla } from '../types';
 import './Dashboard.css';
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, hasRole, permissionsLoaded } = useAuth();
   const navigate = useNavigate();
   const [planillas, setPlanillas] = useState<Planilla[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -16,7 +16,6 @@ export default function Dashboard() {
       try {
         // Obtener el empresaId del usuario desde la API
         const token = localStorage.getItem('token');
-        console.log('Token:', token);
         let empresaId = null;
         
         if (token) {
@@ -24,10 +23,8 @@ export default function Dashboard() {
             const userResponse = await fetch('/api/usuarios/me', {
               headers: { Authorization: `Bearer ${token}` }
             });
-            console.log('User response:', userResponse.status);
             if (userResponse.ok) {
               const userData = await userResponse.json();
-              console.log('User data:', userData);
               empresaId = userData.UserEmpresaID;
             }
           } catch (e) {
@@ -41,12 +38,14 @@ export default function Dashboard() {
         if (empresaId) {
           params.puntoVenta = empresaId;
         }
-        // Solo mostrar planillas pendientes (estado A)
-        params.estado = 'A';
-        console.log('Params:', params);
+        
+        // Si es Contabilidad, mostrar planillas pendientes por revisar (estado A)
+        // Si es otro rol, mostrar sus propias planillas
+        if (hasRole('Contabilidad')) {
+          params.estado = 'A';
+        }
         
         const data = await planillasApi.getAll(params);
-        console.log('Planillas:', data);
         setPlanillas(data);
       } catch (error) {
         console.error('Error loading dashboard:', error);
@@ -55,8 +54,11 @@ export default function Dashboard() {
       }
     };
 
-    fetchData();
-  }, []);
+    // Esperar a que los permisos estén cargados
+    if (permissionsLoaded) {
+      fetchData();
+    }
+  }, [permissionsLoaded, hasRole]);
 
   const handleVerPlanilla = (id: number) => {
     navigate(`/planillas/${id}/editar`);

@@ -37,21 +37,33 @@ router.get('/me', async (req: AuthRequest, res: Response) => {
       return;
     }
 
+    // Optimizado: usando select en vez de include anidados
     const user = await prisma.users.findUnique({
       where: { id: userId },
-      include: {
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        fullName: true,
+        UserEmpresaID: true,
         userRoles: {
-          include: { 
+          select: {
             role: {
-              include: {
+              select: {
+                id: true,
+                name: true,
                 rolePermissions: {
-                  include: { permission: true }
+                  select: {
+                    permission: {
+                      select: { id: true, name: true }
+                    }
+                  }
                 }
               }
             }
-          },
-        },
-      },
+          }
+        }
+      }
     });
 
     if (!user) {

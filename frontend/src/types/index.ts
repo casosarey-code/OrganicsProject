@@ -1,3 +1,8 @@
+export interface RoleInfo {
+  id: number;
+  name: string;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -8,7 +13,7 @@ export interface User {
   isVerified: boolean;
   lastLoginAt?: string;
   createdAt: string;
-  roles: string[];
+  roles: string[] | RoleInfo[];
   UserEmpresaID?: number;
 }
 
@@ -53,6 +58,7 @@ export interface Producto {
   ProductoPrecio: number;
   ProductoStock: number;
   ProductoActivo: boolean;
+  ProductoSoloContabilidad?: boolean;
 }
 
 export interface Planilla {
@@ -87,6 +93,7 @@ export interface PlanillaDetalle {
   PDID: number;
   PlanillaID: number;
   PDProducto: number;
+  PDOrden?: number;
   PDCantInicial: number;
   PDCantCompra: number;
   PDCantAjuste: number;
@@ -97,6 +104,7 @@ export interface PlanillaDetalle {
   PDFechaReg: string;
   PDUsuarioReg: string;
   producto?: Producto;
+  valorEmpresa?: number;
 }
 
 export interface PlanillaOtros {
@@ -112,6 +120,7 @@ export interface PlanillaOtros {
 
 export interface CreatePlanillaDTO {
   PlanillaFecha?: string;
+  PlanillaFechaVencimiento?: string;
   PlanillaPuntoVenta: number;
   PlanillaVentaBruta?: number;
   PlanillaVentaEfectivo?: number;

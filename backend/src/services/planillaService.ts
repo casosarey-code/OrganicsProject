@@ -1,5 +1,43 @@
 import prisma from '../config/db';
 
+/**
+ * Obtiene el N. Final de la última planilla cerrada (estado C o D) para una empresa.
+ * Retorna un Map con { productoId: nFinal }
+ */
+export async function obtenerNFinalAnterior(empresaId: number): Promise<Map<number, number>> {
+  const nFinalMap = new Map<number, number>();
+  
+  // Buscar la última planilla enviada o revisada
+  const ultimaPlanilla = await prisma.planilla.findFirst({
+    where: {
+      PlanillaPuntoVenta: empresaId,
+      PlanillaEstado: { in: ['C', 'D'] }, // Enviado o Revisado
+    },
+    orderBy: { PlanillaFecha: 'desc' },
+    include: {
+      detalles: {
+        select: {
+          PDProducto: true,
+          PDCantFinal: true,
+        },
+      },
+    },
+  });
+  
+  console.log(`[obtenerNFinalAnterior] Empresa: ${empresaId}, Planilla encontrada: ${ultimaPlanilla?.PlanillaID || 'N/A'}`);
+  
+  if (ultimaPlanilla) {
+    // Llenar el Map con los N. Final
+    for (const detalle of ultimaPlanilla.detalles) {
+      const nFinal = Number(detalle.PDCantFinal) || 0;
+      nFinalMap.set(detalle.PDProducto, nFinal);
+      console.log(`[obtenerNFinalAnterior] Producto ${detalle.PDProducto}: N.Final = ${nFinal}`);
+    }
+  }
+  
+  return nFinalMap;
+}
+
 export class PlanillaService {
   async findAll(filters: { fecha?: string; puntoVenta?: number; estado?: string }) {
     const where: any = {};
@@ -43,23 +81,29 @@ export class PlanillaService {
       },
     });
 
+    // Obtener N. Final de la planilla anterior (estado C o D)
+    const nFinalAnterior = await obtenerNFinalAnterior(data.PlanillaPuntoVenta);
+
     // Si hay productos en EmpresaPlanilla, clonararlos como detalles
-    // Si el usuario envió detalles personalizados, usarlos (sobrescriben los clonados)
+    // Si el usuario envía detalles personalizados, usarlos (sobrescriben los clonados)
     let detallesData: any[] = [];
     
     if (empresaProductos.length > 0) {
-      // Clonar desde EmpresaPlanilla con valores por defecto
-      detallesData = empresaProductos.map((ep) => ({
-        PDProducto: ep.EPProducto,
-        PDCantInicial: 0,
-        PDCantCompra: 0,
-        PDCantAjuste: 0,
-        PDCantSubtotal: 0,
-        PDCantVenta: 0,
-        PDCantValor: ep.EPValorProducto || 0, // Usar el precio personalizado de la empresa
-        PDCantFinal: 0,
-        PDUsuarioReg: userId,
-      }));
+      // Clonar desde EmpresaPlanilla con N. Inicial = N. Final anterior
+      detallesData = empresaProductos.map((ep) => {
+        const nInicial = nFinalAnterior.get(ep.EPProducto) || 0;
+        return {
+          PDProducto: ep.EPProducto,
+          PDCantInicial: nInicial,
+          PDCantCompra: 0,
+          PDCantAjuste: 0,
+          PDCantSubtotal: nInicial, // Subtotal = Inicial
+          PDCantVenta: 0,
+          PDCantValor: ep.EPValorProducto || 0, // Usar el precio personalizado de la empresa
+          PDCantFinal: nInicial, // Final = Inicial
+          PDUsuarioReg: userId,
+        };
+      });
     }
 
     // Si el usuario envió detalles personalizados, agregarlos (o sobrescribir los clonados)

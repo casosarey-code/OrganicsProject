@@ -14,30 +14,53 @@ export const validatePermission = (permissionName: string) => {
         return;
       }
 
+      // Optimizado: una sola consulta con roles y permisos
       const userRoles = await prisma.userRoles.findMany({
         where: { userId: req.user.userId },
         include: {
           role: {
-            include: {
+            select: {
+              name: true,
               rolePermissions: {
-                include: {
-                  permission: true,
-                },
-              },
-            },
+                select: {
+                  permission: {
+                    select: { name: true }
+                  }
+                }
+              }
+            }
           },
         },
       });
 
+      // Si el usuario es admin, tiene todos los permisos
+      const isAdmin = userRoles.some((ur) => ur.role.name === 'admin');
+      
+      if (isAdmin) {
+        (req as any).permissions = [];
+        (req as any).isAdmin = true;
+        next();
+        return;
+      }
+
+      // Verificar permiso
       const hasPermission = userRoles.some((userRole) =>
         userRole.role.rolePermissions.some(
           (rp) => rp.permission.name === permissionName
         )
       );
 
+<<<<<<< HEAD
       // Permitir siempre (sin verificación de permisos)
       next();
       return;
+=======
+      // Adjuntar los permisos al request
+      const allPermissions = userRoles.flatMap((ur) =>
+        ur.role.rolePermissions.map((rp) => rp.permission.name)
+      );
+      (req as any).permissions = allPermissions;
+>>>>>>> 84ac4ad49eaec7c30b806ff165900594ecaa2db9
 
       if (!hasPermission) {
         res.status(403).json({
@@ -49,6 +72,7 @@ export const validatePermission = (permissionName: string) => {
 
       next();
     } catch (error) {
+      console.error('Error validatePermission:', error);
       res.status(500).json({ error: 'Error al verificar permisos' });
     }
   };

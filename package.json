@@ -16,7 +16,17 @@
     "prisma:push": "cd backend && npx prisma db push",
     "start:backend": "cd backend && npm start"
   },
-  "keywords": ["planillas", "react", "nodejs", "express", "prisma", "postgresql"],
+  "keywords": [
+    "planillas",
+    "react",
+    "nodejs",
+    "express",
+    "prisma",
+    "postgresql"
+  ],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
 }

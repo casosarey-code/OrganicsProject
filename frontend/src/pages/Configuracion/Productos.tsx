@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { productosApi } from '../../api';
 import { Producto } from '../../types';
+import GestionComposiciones from './GestionComposiciones';
 
 export default function Productos() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [showComposiciones, setShowComposiciones] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [formData, setFormData] = useState({
     ProductoNombre: '',
@@ -14,6 +16,7 @@ export default function Productos() {
     ProductoPrecio: 0,
     ProductoStock: 0,
     ProductoActivo: true,
+    ProductoSoloContabilidad: false,
   });
 
   const fetchProductos = async () => {
@@ -40,6 +43,7 @@ export default function Productos() {
       ProductoPrecio: 0,
       ProductoStock: 0,
       ProductoActivo: true,
+      ProductoSoloContabilidad: false,
     });
     setEditingId(null);
     setShowForm(false);
@@ -52,6 +56,7 @@ export default function Productos() {
       ProductoPrecio: producto.ProductoPrecio,
       ProductoStock: producto.ProductoStock,
       ProductoActivo: producto.ProductoActivo,
+      ProductoSoloContabilidad: producto.ProductoSoloContabilidad || false,
     });
     setEditingId(producto.ProductoID);
     setShowForm(true);
@@ -82,6 +87,20 @@ export default function Productos() {
     }
   };
 
+  const handleToggleSoloContabilidad = async (id: number) => {
+    try {
+      await fetch(`${import.meta.env.VITE_API_URL}/productos/${id}/toggle-solo-contabilidad`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      fetchProductos();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Error al cambiar estado');
+    }
+  };
+
   const handleDelete = async (id: number) => {
     if (!confirm('¿Eliminar este producto?')) return;
     try {
@@ -92,13 +111,22 @@ export default function Productos() {
     }
   };
 
+  if (showComposiciones) {
+    return <GestionComposiciones onBack={() => setShowComposiciones(false)} />;
+  }
+
   return (
     <div className="page-container">
       <div className="page-header">
         <h1>Configuración - Productos</h1>
-        <button onClick={() => setShowForm(true)} className="btn btn-primary">
-          + Nuevo Producto
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button onClick={() => setShowComposiciones(true)} className="btn btn-secondary">
+            ⚙️ Composiciones
+          </button>
+          <button onClick={() => setShowForm(true)} className="btn btn-primary">
+            + Nuevo Producto
+          </button>
+        </div>
       </div>
 
       {error && <div className="error-message">{error}</div>}
@@ -156,6 +184,16 @@ export default function Productos() {
                   Producto Activo
                 </label>
               </div>
+              <div className="form-group checkbox">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={formData.ProductoSoloContabilidad}
+                    onChange={(e) => setFormData({ ...formData, ProductoSoloContabilidad: e.target.checked })}
+                  />
+                  Solo Contabilidad (no genera filas en planilla de inventario)
+                </label>
+              </div>
               <div className="modal-actions">
                 <button type="button" onClick={resetForm} className="btn btn-secondary">
                   Cancelar
@@ -182,6 +220,7 @@ export default function Productos() {
               <th>Nombre</th>
               <th>Precio</th>
               <th>Stock</th>
+              <th>Solo Contab.</th>
               <th>Estado</th>
               <th>Acciones</th>
             </tr>
@@ -194,6 +233,15 @@ export default function Productos() {
                 <td>{prod.ProductoNombre}</td>
                 <td>${prod.ProductoPrecio.toLocaleString()}</td>
                 <td>{prod.ProductoStock}</td>
+                <td>
+                  <button 
+                    onClick={() => handleToggleSoloContabilidad(prod.ProductoID)} 
+                    className={`btn btn-sm ${prod.ProductoSoloContabilidad ? 'btn-success' : 'btn-default'}`}
+                    style={{ padding: '2px 8px', fontSize: '11px' }}
+                  >
+                    {prod.ProductoSoloContabilidad ? '✓ Sí' : 'No'}
+                  </button>
+                </td>
                 <td>
                   <span className={`status status-${prod.ProductoActivo ? 'a' : 'i'}`}>
                     {prod.ProductoActivo ? 'Activo' : 'Inactivo'}

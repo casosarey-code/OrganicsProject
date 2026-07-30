@@ -10,7 +10,14 @@ export default function ListadoPlanillas() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [filters, setFilters] = useState({ fecha: '', estado: '' });
-  const isAdmin = user?.roles?.includes('admin');
+  const isAdmin = user?.roles?.some(role => 
+    typeof role === 'string' ? role === 'admin' : role.name === 'admin'
+  );
+  // Detectar si es usuario PV (rol PV que no es admin)
+  const isPV = !isAdmin && user?.roles?.some(role => {
+    const roleName = typeof role === 'string' ? role : role.name;
+    return roleName === 'pv' || roleName === 'Punto de Venta';
+  });
 
   const fetchPlanillas = async () => {
     setIsLoading(true);

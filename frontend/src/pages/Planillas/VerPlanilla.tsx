@@ -5,16 +5,159 @@ import { Planilla } from "../../types";
 import * as XLSX from "xlsx";
 import "./CompletarPlanilla.css";
 
+interface Composicion {
+  PCID: number;
+  PCProducto: number;
+  PCComponente: number;
+  PCCantidad: number;
+  PCEmpresa: number | null;
+  producto?: { ProductoID: number; ProductoNombre: string };
+  componente?: { ProductoID: number; ProductoNombre: string };
+}
+
 export default function VerPlanilla() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [planilla, setPlanilla] = useState<Planilla | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [composiciones, setComposiciones] = useState<Composicion[]>([]);
+  
+  // Reordenar productos
+  const [editandoOrden, setEditandoOrden] = useState(false);
+  const [ordenTemporal, setOrdenTemporal] = useState<any[]>([]);
+  
+  const iniciarReordenamiento = () => {
+    if (!planilla?.detalles) return;
+    const sorted = [...planilla.detalles].sort((a, b) => (a.PDOrden || 999) - (b.PDOrden || 999));
+    setOrdenTemporal(sorted);
+    setEditandoOrden(true);
+  };
+  
+  const moverArriba = (index: number) => {
+    if (index === 0) return;
+    const newOrden = [...ordenTemporal];
+    [newOrden[index - 1], newOrden[index]] = [newOrden[index], newOrden[index - 1]];
+    setOrdenTemporal(newOrden);
+  };
+  
+  const moverAbajo = (index: number) => {
+    if (index === ordenTemporal.length - 1) return;
+    const newOrden = [...ordenTemporal];
+    [newOrden[index], newOrden[index + 1]] = [newOrden[index + 1], newOrden[index]];
+    setOrdenTemporal(newOrden);
+  };
+  
+  const guardarOrden = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const ordenes = ordenTemporal.map((det, idx) => ({
+        pdId: det.PDID,
+        nuevoOrden: idx + 1,
+      }));
+      
+      const response = await fetch(`/api/planillas/${id}/reordenar`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ ordenes }),
+      });
+      
+      if (!response.ok) throw new Error('Error al guardar');
+      
+      setEditandoOrden(false);
+      fetchPlanilla();
+      alert('Orden guardado exitosamente');
+    } catch (err) {
+      alert('Error al guardar el orden');
+    }
+  };
+
+  // Aplicar orden desde la empresa
+  const aplicarOrdenEmpresa = async () => {
+    if (!planilla || !confirm('¿Aplicar el orden de productos desde la configuración de la empresa?')) return;
+    
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/planillas/${id}/aplicar-orden-empresa`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (!response.ok) throw new Error('Error al aplicar orden');
+      
+      alert('Orden aplicado correctamente desde la empresa');
+      fetchPlanilla();
+    } catch (err) {
+      alert('Error al aplicar el orden de la empresa');
+    }
+  };
 
   useEffect(() => {
-    if (id) fetchPlanilla();
+    if (id) {
+      fetchPlanilla();
+      fetchComposiciones();
+    }
   }, [id]);
+
+  // Función para cargar composiciones del backend (filtradas por empresa)
+  const fetchComposiciones = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      // Pasar empresaId si está disponible en la planilla
+      const empresaId = planilla?.puntoVenta?.EmpresaID;
+      const url = empresaId 
+        ? `/api/productos/composicion?empresaId=${empresaId}`
+        : '/api/productos/composicion';
+      
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setComposiciones(data);
+      }
+    } catch (err) {
+      console.error('Error al cargar composiciones:', err);
+    }
+  };
+
+  // Calcular impacto de composiciones (con deduplicación)
+  const calcularImpactoComposiciones = (detalles: any[]): Map<number, number> => {
+    const impacto = new Map<number, number>();
+    
+    // Deduplicar: preferir empresa-specific sobre null
+    const composicionMap = new Map<string, Composicion>();
+    composiciones.forEach(c => {
+      const key = `${c.PCProducto}-${c.PCComponente}`;
+      const existing = composicionMap.get(key);
+      if (!existing || (c.PCEmpresa !== null && existing.PCEmpresa === null)) {
+        composicionMap.set(key, c);
+      }
+    });
+    
+    detalles.forEach((detalle) => {
+      const venta = Number(detalle.PDCantVenta) || 0;
+      if (venta <= 0) return;
+      
+      const productoId = Number(detalle.PDProducto);
+      const composicionesDondeEsComponente = Array.from(composicionMap.values()).filter(c => c.PCComponente === productoId);
+      
+      composicionesDondeEsComponente.forEach(comp => {
+        const padreId = comp.PCProducto;
+        const cantidadEquivalente = venta * comp.PCCantidad;
+        const impactoActual = impacto.get(padreId) || 0;
+        impacto.set(padreId, impactoActual - cantidadEquivalente);
+      });
+    });
+    
+    return impacto;
+  };
 
   const fetchPlanilla = async () => {
     setIsLoading(true);
@@ -202,22 +345,26 @@ export default function VerPlanilla() {
     doc.save(`planilla_${empresa}_${fecha}.pdf`);
   };
 
-  // Función para validar errores en detalles
-  const validarDetalle = (detalle: any) => {
+  // Función para validar errores en detalles (con composiciones)
+  const validarDetalle = (detalle: any, impactoComposiciones: Map<number, number> = new Map()) => {
     const subtotalCalculado =
       (Number(detalle.PDCantInicial) || 0) +
       (Number(detalle.PDCantCompra) || 0) -
       (Number(detalle.PDCantAjuste) || 0);
     const subtotalRegistrado = Number(detalle.PDCantSubtotal) || 0;
     const errorSubtotal = subtotalCalculado !== subtotalRegistrado;
+    
+    // Incluir impacto de composiciones en el cálculo del N. Final
+    const impactoPadre = impactoComposiciones.get(Number(detalle.PDProducto)) || 0;
     const finalCalculado =
-      subtotalCalculado - (Number(detalle.PDCantVenta) || 0);
+      subtotalCalculado - (Number(detalle.PDCantVenta) || 0) + impactoPadre;
     const finalRegistrado = Number(detalle.PDCantFinal) || 0;
-    const errorFinal = finalCalculado !== finalRegistrado;
+    const errorFinal = Math.abs(finalCalculado - finalRegistrado) > 0.01;
+    
     const valorCalculado =
       (Number(detalle.valorEmpresa) || 0) * (Number(detalle.PDCantVenta) || 0);
     const valorRegistrado = Number(detalle.PDCantValor) || 0;
-    const errorValor = valorCalculado !== valorRegistrado;
+    const errorValor = Math.abs(valorCalculado - valorRegistrado) > 0.01;
     return {
       errorSubtotal,
       errorFinal,
@@ -225,22 +372,26 @@ export default function VerPlanilla() {
       subtotalCalculado,
       finalCalculado,
       valorCalculado,
+      impactoPadre,
     };
   };
 
   const calcularTotales = () => {
     if (!planilla) return { totalBruto: 0, totalBrutoCalc: 0, efectivo: 0, bancos: 0, total: 0 };
-    // Total venta bruta = suma de PDCantValor (lo registrado)
-    const totalBruto = (planilla.detalles || []).reduce(
+    
+    const detalles = planilla.detalles || [];
+    
+    // Total venta bruta = suma de PDCantValor (TODOS los productos)
+    const totalBruto = detalles.reduce(
       (sum, d) => sum + (Number(d.PDCantValor) || 0),
       0,
     );
-    // Total venta bruta calculada = suma de (valorEmpresa × PDCantVenta)
-    const totalBrutoCalc = (planilla.detalles || []).reduce(
-      (sum, d) =>
-        sum + (Number(d.valorEmpresa) || 0) * (Number(d.PDCantVenta) || 0),
+    // Total venta bruta calculada = suma de (valorEmpresa × PDCantVenta) (TODOS los productos)
+    const totalBrutoCalc = detalles.reduce(
+      (sum, d) => sum + (Number(d.valorEmpresa) || 0) * (Number(d.PDCantVenta) || 0),
       0,
     );
+    
     const otros = planilla.otros || [];
     const otrosGastos = otros
       .filter((o) =>
@@ -257,12 +408,13 @@ export default function VerPlanilla() {
       totalBruto,
       totalBrutoCalc,
       efectivo: totalBruto - otrosBancos,
+      restanteEfectivo: totalBruto - otrosBancos - otrosGastos,
       bancos: otrosBancos,
       total: totalBruto - otrosGastos,
     };
   };
 
-  const { totalBruto, totalBrutoCalc, efectivo, bancos, total } = calcularTotales();
+  const { totalBruto, totalBrutoCalc, efectivo, restanteEfectivo, bancos, total } = calcularTotales();
 
   const handleMarcarRevisada = async () => {
     if (!planilla) return;
@@ -279,6 +431,14 @@ export default function VerPlanilla() {
 
   if (isLoading) return <div className="loading">Cargando...</div>;
   if (!planilla) return <div className="no-data">Planilla no encontrada</div>;
+
+  // Calcular impacto de composiciones para la validación
+  const impactoComposiciones = calcularImpactoComposiciones(planilla.detalles || []);
+
+  // Función para verificar si es producto padre
+  const isProductoPadre = (productoId: number): boolean => {
+    return composiciones.some(c => c.PCProducto === productoId);
+  };
 
   return (
     <div className="page-container">
@@ -303,7 +463,26 @@ export default function VerPlanilla() {
           </span>
         </div>
         <div className="header-actions">
-          <button onClick={exportToExcel} className="btn btn-secondary">
+          {!editandoOrden ? (
+            <>
+              <button onClick={aplicarOrdenEmpresa} className="btn btn-secondary">
+                🏢 Orden Empresa
+              </button>
+              <button onClick={iniciarReordenamiento} className="btn btn-secondary" style={{ marginLeft: '5px' }}>
+                ↕ Reordenar
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={guardarOrden} className="btn btn-primary">
+                ✓ Guardar Orden
+              </button>
+              <button onClick={() => setEditandoOrden(false)} className="btn btn-secondary" style={{ marginLeft: '5px' }}>
+                Cancelar
+              </button>
+            </>
+          )}
+          <button onClick={exportToExcel} className="btn btn-secondary" style={{ marginLeft: '10px' }}>
             📊 Excel
           </button>
           <button onClick={exportToPDF} className="btn btn-secondary">
@@ -342,12 +521,19 @@ export default function VerPlanilla() {
                 subtotalCalculado,
                 finalCalculado,
                 valorCalculado,
-              } = validarDetalle(detalle);
+                impactoPadre,
+              } = validarDetalle(detalle, impactoComposiciones);
               // Marca fila completa si hay error en Subtotal, Final o Valor
               const errorFila = errorSubtotal || errorFinal || errorValor;
+              const soloContabilidad = detalle.producto?.ProductoSoloContabilidad;
+              const esPadre = isProductoPadre(Number(detalle.PDProducto));
               return (
-                <tr key={index} className={errorFila ? "row-error" : ""}>
-                  <td>{detalle.producto?.ProductoNombre || "Producto"}</td>
+                <tr key={index} className={`${errorFila ? "row-error" : ""} ${soloContabilidad ? "row-solo-contabilidad" : ""} ${esPadre ? "row-padre" : ""}`}>
+                  <td>
+                    {detalle.producto?.ProductoNombre || "Producto"}
+                    {soloContabilidad && <span style={{ color: '#666', fontSize: '0.8em', marginLeft: '5px' }}>(Solo Contabilidad)</span>}
+                    {esPadre && <span style={{fontSize:'0.7em', marginLeft:'5px'}}>📦</span>}
+                  </td>
                   <td>
                     <input
                       type="tel"
@@ -396,7 +582,7 @@ export default function VerPlanilla() {
                     </div>
                   </td>
                   <td
-                    className={errorFinal ? "cell-error" : ""}
+                    className={`${errorFinal ? "cell-error" : ""} ${esPadre ? "cell-padre" : ""}`}
                   >
                     <div>
                       R: {formatNumber(Number(detalle.PDCantFinal) || 0)}
@@ -404,6 +590,11 @@ export default function VerPlanilla() {
                     <div className="calc-hint">
                       Calc: {formatNumber(finalCalculado)}
                     </div>
+                    {esPadre && impactoPadre !== 0 && (
+                      <div style={{fontSize:'10px', color:'#27ae60', marginTop:'2px'}}>
+                        (±{impactoPadre.toFixed(2)} comp.)
+                      </div>
+                    )}
                   </td>
                 </tr>
               );
@@ -452,15 +643,9 @@ export default function VerPlanilla() {
                     {otro.POUrlEvidencia &&
                     otro.POUrlEvidencia.startsWith("/") ? (
                       <a
-                        href="#"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          window.open(
-                            otro.POUrlEvidencia,
-                            "Evidencia",
-                            "width=800,height=600",
-                          );
-                        }}
+                        href={otro.POUrlEvidencia}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         style={{
                           color: "#3498db",
                           textDecoration: "underline",
@@ -497,6 +682,10 @@ export default function VerPlanilla() {
               <tr>
                 <td>Efectivo</td>
                 <td className="value">${formatNumber(Number(efectivo))}</td>
+              </tr>
+              <tr>
+                <td>Restante en efectivo</td>
+                <td className="value">${formatNumber(Number(restanteEfectivo))}</td>
               </tr>
               <tr>
                 <td>Bancos</td>

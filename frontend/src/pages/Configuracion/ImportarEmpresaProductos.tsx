@@ -7,6 +7,7 @@ interface ProductoImport {
   ProductoCodigo?: string;
   ProductoID?: number;
   EPValorProducto?: number;
+  EPOrden?: number;
   EPActivo?: boolean;
 }
 
@@ -31,7 +32,7 @@ export default function ImportarEmpresaProductos() {
   const [resultado, setResultado] = useState<{ creados: number; actualizados: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const canManageAll = hasPermission('empresa_planilla_update') || hasPermission('empresas_update');
+  const canManageAll = hasPermission('empresas_update');
 
   useEffect(() => {
     const fetchEmpresas = async () => {
@@ -104,6 +105,9 @@ export default function ImportarEmpresaProductos() {
             case 'EPValorProducto':
               producto.EPValorProducto = value ? parseFloat(value) : undefined;
               break;
+            case 'EPOrden':
+              producto.EPOrden = value ? parseInt(value) : undefined;
+              break;
             case 'EPActivo':
               producto.EPActivo = value.toLowerCase() === 'true' || value === '1';
               break;
@@ -168,7 +172,7 @@ export default function ImportarEmpresaProductos() {
         fileInputRef.current.value = '';
       }
     } catch (error: any) {
-      setErrores([{ fila: 0, error: error.response?.data?.error || 'Error al importar productos' }]);
+      setErrores([{ fila: 0, error: 'ERROR ACTUAL: ' + (error.response?.data?.error || 'Error al importar productos') }]);
     } finally {
       setIsImporting(false);
     }
@@ -249,7 +253,7 @@ export default function ImportarEmpresaProductos() {
       <div className="form-section">
         <h3>Seleccionar Archivo CSV</h3>
         <p className="help-text">
-          El archivo debe tener columnas: ProductoCodigo o ProductoID (requerido), EPValorProducto, EPActivo
+          El archivo debe tener columnas: ProductoCodigo o ProductoID (requerido), EPValorProducto, EPOrden, EPActivo
         </p>
         
         <div className="file-upload">

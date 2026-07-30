@@ -1,7 +1,16 @@
 import api from './axios';
 import { User } from '../types';
 
-interface UserWithRoles extends User {
+interface UserWithRoles {
+  id: string;
+  email: string;
+  username?: string;
+  fullName?: string;
+  avatarUrl?: string;
+  isActive: boolean;
+  isVerified: boolean;
+  lastLoginAt?: string;
+  createdAt: string;
   roles: { id: number; name: string }[];
   UserEmpresaID?: number;
 }

@@ -10,6 +10,8 @@ import ListadoPlanillas from './pages/Planillas/ListadoPlanillas';
 import FormularioPlanilla from './pages/Planillas/FormularioPlanilla';
 import CompletarPlanilla from './pages/Planillas/CompletarPlanilla';
 import VerPlanilla from './pages/Planillas/VerPlanilla';
+import VerPlanillaPV from './pages/Planillas/VerPlanillaPV';
+import ListadoPlanillasPV from './pages/Planillas/ListadoPlanillasPV';
 import Empresas from './pages/Configuracion/Empresas';
 import Productos from './pages/Configuracion/Productos';
 import Usuarios from './pages/Configuracion/Usuarios';
@@ -23,6 +25,7 @@ import PlantillasEmail from './pages/Configuracion/PlantillasEmail';
 import HistorialCorreos from './pages/Configuracion/HistorialCorreos';
 import ImportarProductos from './pages/Configuracion/ImportarProductos';
 import ImportarEmpresaProductos from './pages/Configuracion/ImportarEmpresaProductos';
+import GestionComposiciones from './pages/Configuracion/GestionComposiciones';
 import Analitica from './pages/Analitica';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -93,6 +96,14 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/planillas-pv"
+        element={
+          <ProtectedRoute>
+            <ListadoPlanillasPV />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/planillas/nueva"
         element={
           <ProtectedRoute>
@@ -113,6 +124,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <VerPlanilla />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/planillas/:id/ver-pv"
+        element={
+          <ProtectedRoute>
+            <VerPlanillaPV />
           </ProtectedRoute>
         }
       />
@@ -225,6 +244,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <ImportarEmpresaProductos />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/config/composiciones"
+        element={
+          <ProtectedRoute>
+            <GestionComposiciones />
           </ProtectedRoute>
         }
       />

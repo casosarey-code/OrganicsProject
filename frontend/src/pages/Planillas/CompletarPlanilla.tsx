@@ -1,9 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { planillasApi } from '../../api';
 import { Planilla } from '../../types';
 import FileUpload from '../../components/FileUpload';
 import './CompletarPlanilla.css';
+
+interface Composicion {
+  PCID: number;
+  PCProducto: number; // Producto padre (POLLO)
+  PCComponente: number; // Componente (POLLO 1/2)
+  PCCantidad: number; // Cuántas unidades del componente = 1 del padre
+  PCEmpresa: number | null; // Empresa específica o null para global
+  producto?: { ProductoID: number; ProductoNombre: string };
+  componente?: { ProductoID: number; ProductoNombre: string };
+}
 
 export default function CompletarPlanilla() {
   const { id } = useParams<{ id: string }>();
@@ -13,20 +23,208 @@ export default function CompletarPlanilla() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [composiciones, setComposiciones] = useState<Composicion[]>([]);
+  
+  // Estado para valores de input como strings (para permitir escribir decimales)
+  const [inputValues, setInputValues] = useState<Record<string, string>>({});
+  
+  // Bandera para evitar loop infinito
+  const [isCalculated, setIsCalculated] = useState(false);
 
   useEffect(() => {
     if (id) fetchPlanilla();
   }, [id]);
 
+  // Función para cargar composiciones del backend (filtradas por empresa)
+  const fetchComposiciones = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      // Pasar empresaId si está disponible en la planilla
+      const empresaId = planilla?.puntoVenta?.EmpresaID;
+      const url = empresaId 
+        ? `/api/productos/composicion?empresaId=${empresaId}`
+        : '/api/productos/composicion';
+      
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        console.log('Composiciones cargadas:', data);
+        setComposiciones(data);
+      }
+    } catch (err) {
+      console.error('Error al cargar composiciones:', err);
+    }
+  }, [planilla?.puntoVenta?.EmpresaID]);
+
   const fetchPlanilla = async () => {
     setIsLoading(true);
+    setIsCalculated(false); // Resetear bandera
     try {
       const data = await planillasApi.getById(parseInt(id!));
       setPlanilla(data);
+      // Cargar composiciones
+      await fetchComposiciones();
+      // Inicializar valores de input
+      const initialValues: Record<string, string> = {};
+      (data.detalles || []).forEach((d: any, idx: number) => {
+        initialValues[`${idx}-PDCantInicial`] = String(d.PDCantInicial || 0);
+        initialValues[`${idx}-PDCantCompra`] = String(d.PDCantCompra || 0);
+        initialValues[`${idx}-PDCantAjuste`] = String(d.PDCantAjuste || 0);
+        initialValues[`${idx}-PDCantVenta`] = String(d.PDCantVenta || 0);
+        initialValues[`${idx}-PDCantValor`] = String(d.PDCantValor || 0);
+      });
+      setInputValues(initialValues);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Error al cargar planilla');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Función para calcular el impacto de composiciones en el N. Final
+  // Cuando se vende un COMPONENTE, afecta el inventario del PADRE
+  const calcularImpactoComposiciones = useCallback((detalles: any[]): Map<number, number> => {
+    const impacto = new Map<number, number>();
+    
+    // Deduplicar: agrupar por PCProducto+PCComponente, preferring empresa-specific over null
+    const composicionMap = new Map<string, Composicion>();
+    composiciones.forEach(c => {
+      const key = `${c.PCProducto}-${c.PCComponente}`;
+      const existing = composicionMap.get(key);
+      // Si no existe, agregar. Si existe y el nuevo es específico (empresa) y el anterior es null, reemplazar
+      if (!existing || (c.PCEmpresa !== null && existing.PCEmpresa === null)) {
+        composicionMap.set(key, c);
+      }
+    });
+    
+    // Para cada detalle vendido
+    detalles.forEach((detalle) => {
+      const venta = Number(detalle.PDCantVenta) || 0;
+      if (venta <= 0) return;
+      
+      const productoId = Number(detalle.PDProducto);
+      
+      // Buscar composiciones donde este producto es COMPONENTE
+      const composicionesDondeEsComponente = Array.from(composicionMap.values()).filter(c => c.PCComponente === productoId);
+      
+      composicionesDondeEsComponente.forEach(comp => {
+        const padreId = comp.PCProducto;
+        const cantidadEquivalente = venta * comp.PCCantidad;
+        
+        // RESTAR del inventario del padre cuando se vende el componente
+        const impactoActual = impacto.get(padreId) || 0;
+        impacto.set(padreId, impactoActual - cantidadEquivalente);
+      });
+    });
+    
+    return impacto;
+  }, [composiciones]);
+
+  // Calcular valores automáticos con composiciones
+  const calcularValoresAuto = useCallback((detalle: any, impactoComposiciones: Map<number, number> = new Map()) => {
+    const inicial = Number(detalle.PDCantInicial) || 0;
+    const compra = Number(detalle.PDCantCompra) || 0;
+    const ajuste = Number(detalle.PDCantAjuste) || 0;
+    const venta = Number(detalle.PDCantVenta) || 0;
+    const valorUnitario = Number(detalle.valorEmpresa) || 0;
+    
+    // Subtotal = Inicial + Compras - Ajustes
+    const subtotal = inicial + compra - ajuste;
+    
+    // Valor = Venta * Precio Unitario
+    const valor = venta * valorUnitario;
+    
+    // Final = Subtotal - Venta + impacto de composiciones
+    const impactoPadre = impactoComposiciones.get(Number(detalle.PDProducto)) || 0;
+    const final = subtotal - venta + impactoPadre;
+    
+    return { subtotal, valor, final, impactoPadre };
+  }, []);
+
+  // Cuando planilla o composiciones cambian, recalcular valores
+  useEffect(() => {
+    if (!planilla || !planilla.detalles) return;
+    
+    // Si hay composiciones, calcular impacto
+    if (composiciones.length > 0) {
+      const impactoComposiciones = calcularImpactoComposiciones(planilla.detalles);
+      
+      const detallesConCalculos = (planilla.detalles || []).map((d: any) => {
+        const { subtotal, valor, final, impactoPadre } = calcularValoresAuto(d, impactoComposiciones);
+        return {
+          ...d,
+          PDCantSubtotal: subtotal,
+          PDCantValor: valor,
+          PDCantFinal: final,
+          _impactoPadre: impactoPadre,
+        };
+      });
+      setPlanilla({ ...planilla, detalles: detallesConCalculos });
+    } else {
+      // Sin composiciones, solo calcular valores normales
+      const detallesConCalculos = (planilla.detalles || []).map((d: any) => {
+        const { subtotal, valor, final } = calcularValoresAuto(d, new Map());
+        return {
+          ...d,
+          PDCantSubtotal: subtotal,
+          PDCantValor: valor,
+          PDCantFinal: final,
+          _impactoPadre: 0,
+        };
+      });
+      setPlanilla({ ...planilla, detalles: detallesConCalculos });
+    }
+  }, [planilla, composiciones]);
+
+  // Manejar cambio de input (mantener como string mientras se escribe)
+  const handleInputChange = (key: string, value: string) => {
+    setInputValues(prev => ({ ...prev, [key]: value }));
+  };
+
+  // Manejar pérdida de foco (convertir a número y actualizar estado)
+  const handleInputBlur = (index: number, field: string) => {
+    if (!planilla) return;
+    const key = `${index}-${field}`;
+    const strValue = inputValues[key] || '0';
+    const numValue = parseNumber(strValue);
+    
+    const detalles = [...(planilla.detalles || [])];
+    detalles[index] = { ...detalles[index], [field]: numValue };
+    
+    // Recalcular valores automáticos si cambia algún campo relevante
+    if (['PDCantInicial', 'PDCantCompra', 'PDCantAjuste', 'PDCantVenta'].includes(field)) {
+      // IMPORTANTE: Recalcular impacto de TODOS los componentes (afecta al padre)
+      const impactoComposiciones = calcularImpactoComposiciones(detalles);
+      
+      // Recalcular TODOS los detalles con el nuevo impacto (pasando el impacto calculado)
+      const detallesRecalculados = detalles.map((d: any) => {
+        const { subtotal, valor, final, impactoPadre } = calcularValoresAuto(d, impactoComposiciones);
+        return {
+          ...d,
+          PDCantSubtotal: subtotal,
+          PDCantValor: valor,
+          PDCantFinal: final,
+          _impactoPadre: impactoPadre,
+        };
+      });
+      
+      // Actualizar inputValues para campos calculados del detalle editado
+      const detalleActualizado = detallesRecalculados[index];
+      setInputValues(prev => ({ 
+        ...prev, 
+        [key]: formatNumber(numValue),
+        [`${index}-PDCantSubtotal`]: formatNumber(detalleActualizado.PDCantSubtotal),
+        [`${index}-PDCantValor`]: formatNumber(detalleActualizado.PDCantValor),
+        [`${index}-PDCantFinal`]: formatNumber(detalleActualizado.PDCantFinal),
+      }));
+      
+      setPlanilla({ ...planilla, detalles: detallesRecalculados });
+    } else {
+      setInputValues(prev => ({ ...prev, [key]: formatNumber(numValue) }));
+      detalles[index] = { ...detalles[index] };
+      setPlanilla({ ...planilla, detalles });
     }
   };
 
@@ -35,6 +233,18 @@ export default function CompletarPlanilla() {
     const detalles = [...(planilla.detalles || [])];
     const detalle: any = { ...detalles[index] };
     detalle[field] = value;
+    
+    // Recalcular valores automáticos si cambia algún campo relevante
+    if (['PDCantInicial', 'PDCantCompra', 'PDCantAjuste', 'PDCantVenta'].includes(field)) {
+      const impactoComposiciones = calcularImpactoComposiciones(detalles.map((d, i) => i === index ? detalle : d));
+      const { subtotal, valor, final, impactoPadre } = calcularValoresAuto(detalle, impactoComposiciones);
+      
+      detalle.PDCantSubtotal = subtotal;
+      detalle.PDCantValor = valor;
+      detalle.PDCantFinal = final;
+      detalle._impactoPadre = impactoPadre;
+    }
+    
     detalles[index] = detalle;
     setPlanilla({ ...planilla, detalles });
   };
@@ -48,7 +258,16 @@ export default function CompletarPlanilla() {
 
   const addOtro = () => {
     if (!planilla) return;
-    const nuevosOtros = [...(planilla.otros || []), { POID: 0, PlanillaID: planilla.PlanillaID, PODescripcion: '', POValor: 0, POCategoria: 'Gastos', POUrlEvidencia: '' }];
+    const nuevosOtros = [...(planilla.otros || []), { 
+      POID: 0, 
+      PlanillaID: planilla.PlanillaID, 
+      PODescripcion: '', 
+      POValor: 0, 
+      POCategoria: 'Gastos', 
+      POUrlEvidencia: '',
+      POFechaReg: new Date().toISOString(),
+      POUsuarioReg: ''
+    }];
     setPlanilla({ ...planilla, otros: nuevosOtros });
   };
 
@@ -70,40 +289,134 @@ export default function CompletarPlanilla() {
     }
   };
 
-  const formatNumber = (num: number) => num.toLocaleString();
-  const parseNumber = (str: string) => parseInt(str.replace(/\./g, '')) || 0;
-
-  const calcularTotales = () => {
-    if (!planilla) return { totalBruto: 0, efectivo: 0, bancos: 0, total: 0 };
-    const totalBruto = (planilla.detalles || []).reduce((sum, d) => sum + (Number(d.PDCantValor) || 0), 0);
-    const otros = planilla.otros || [];
-    const otrosGastos = otros.filter((o) => ['Gastos', 'Compras', 'Turnos', 'Memorias'].includes(o.POCategoria)).reduce((sum, o) => sum + (Number(o.POValor) || 0), 0);
-    const otrosBancos = otros.filter((o) => ['Bold', 'Nequi', 'Daviplata', 'QR', 'Datafono'].includes(o.POCategoria)).reduce((sum, o) => sum + (Number(o.POValor) || 0), 0);
-    return { totalBruto, efectivo: totalBruto - otrosBancos, bancos: otrosBancos, total: totalBruto - otrosGastos };
+  // Para inputs: sin separadores de miles
+  const formatNumberInput = (num: number) => {
+    if (isNaN(num) || num === null || num === undefined) return '0';
+    if (Number.isInteger(num)) return num.toString();
+    return num.toFixed(2).replace(/\.?0+$/, '');
   };
 
-  const { totalBruto, efectivo, bancos, total } = calcularTotales();
+  // Para resúmenes: con separadores de miles (formato colombiano)
+  const formatNumber = (num: number) => {
+    if (isNaN(num) || num === null || num === undefined) return '0';
+    if (Number.isInteger(num)) {
+      return num.toLocaleString('es-CO');
+    }
+    const fixed = num.toFixed(2);
+    const parts = fixed.split('.');
+    parts[0] = parseInt(parts[0]).toLocaleString('es-CO');
+    return parts.join('.');
+  };
+  
+  const parseNumber = (str: string) => {
+    if (!str || str.trim() === '') return 0;
+    let cleaned = str.trim().replace(/\s/g, '');
+    
+    // Si tiene coma decimal (y no tiene punto), convertir a punto (formato latinoamericano: 25,25)
+    if (cleaned.includes(',') && !cleaned.includes('.')) {
+      cleaned = cleaned.replace(',', '.');
+    } else if (cleaned.includes(',') && cleaned.includes('.')) {
+      // Ambos presentes: remover comas de miles (formato 1,234.56)
+      cleaned = cleaned.replace(/,/g, '');
+    }
+    
+    const result = parseFloat(cleaned);
+    return isNaN(result) ? 0 : result;
+  };
 
+  const calcularTotales = () => {
+    if (!planilla) return { totalBruto: 0, efectivo: 0, bancos: 0, total: 0, gastos: 0, totalConGastos: 0 };
+    // Incluir TODOS los productos en los totales
+    const detalles = planilla.detalles || [];
+    const totalBruto = detalles.reduce((sum, d) => sum + (Number(d.PDCantValor) || 0), 0);
+    const otros = planilla.otros || [];
+    // Gastos puros: Gastos, Compras, Turnos, Memorias
+    const otrosGastos = otros.filter((o) => ['Gastos', 'Compras', 'Turnos', 'Memorias'].includes(o.POCategoria)).reduce((sum, o) => sum + (Number(o.POValor) || 0), 0);
+    // Bancos: Bold, Nequi, Daviplata, QR, Datafono
+    const otrosBancos = otros.filter((o) => ['Bold', 'Nequi', 'Daviplata', 'QR', 'Datafono'].includes(o.POCategoria)).reduce((sum, o) => sum + (Number(o.POValor) || 0), 0);
+    // Total neto después de restar gastos
+    const total = totalBruto - otrosGastos;
+    return { 
+      totalBruto, 
+      efectivo: totalBruto - otrosBancos, 
+      bancos: otrosBancos, 
+      total, 
+      gastos: otrosGastos,
+      totalConGastos: totalBruto - otrosGastos
+    };
+  };
+
+  const { totalBruto, efectivo, bancos, total, gastos } = calcularTotales();
+
+  // Función para verificar si un producto es padre de alguna composición
+  const isProductoPadre = (productoId: number): boolean => {
+    return composiciones.some(c => c.PCProducto === productoId);
+  };
+
+  // Función para obtener nombre del producto padre de una composición
+  const getNombreProductoPadre = (componenteId: number): string | null => {
+    const comp = composiciones.find(c => c.PCComponente === componenteId);
+    return comp?.producto?.ProductoNombre || comp?.componente?.ProductoNombre || null;
+  };
+
+  // BOTÓN GUARDAR
+  const handleSave = async () => {
+    if (!planilla) return;
+    setIsSaving(true);
+    setError('');
+    setSuccess('');
+    
+    try {
+      const updateData = {
+        PlanillaEstado: 'A',
+        detalles: (planilla.detalles || []).map((d: any) => ({
+          PDProducto: Number(d.PDProducto),
+          PDCantInicial: Number(d.PDCantInicial) || 0,
+          PDCantCompra: Number(d.PDCantCompra) || 0,
+          PDCantAjuste: Number(d.PDCantAjuste) || 0,
+          PDCantSubtotal: Number(d.PDCantSubtotal) || 0,
+          PDCantVenta: Number(d.PDCantVenta) || 0,
+          PDCantValor: Number(d.PDCantValor) || 0,
+          PDCantFinal: Number(d.PDCantFinal) || 0,
+        })),
+        otros: (planilla.otros || []).map((o: any) => ({
+          PODescripcion: o.PODescripcion || '',
+          POValor: Number(o.POValor) || 0,
+          POCategoria: o.POCategoria || 'Gastos',
+          POUrlEvidencia: o.POUrlEvidencia || '',
+        })),
+      };
+      await planillasApi.update(planilla.PlanillaID, updateData);
+      navigate('/');
+    } catch (err: any) {
+      console.error('Error:', err);
+      setError(err.response?.data?.error || 'Error al guardar');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // BOTÓN ENVIAR
   const handleSubmit = async () => {
-        if (!planilla) return;
-        setIsSaving(true);
-        setError('');
-        setSuccess('');
-      
-        // Calcular si hay errores
-        let tieneErrores = false;
-        (planilla.detalles || []).forEach((d: any) => {
-          const subtotalCalc = (Number(d.PDCantInicial) || 0) + (Number(d.PDCantCompra) || 0) - (Number(d.PDCantAjuste) || 0);
-          const finalCalc = subtotalCalc - (Number(d.PDCantVenta) || 0);
-          if (subtotalCalc !== Number(d.PDCantSubtotal) || finalCalc !== Number(d.PDCantFinal)) {
-            tieneErrores = true;
-          }
-        });
-      
-        const nuevoEstado = tieneErrores ? 'B' : 'C';
-      
-        try {
-          const updateData = {
+    if (!planilla) return;
+    setIsSaving(true);
+    setError('');
+    setSuccess('');
+  
+    let tieneErrores = false;
+    (planilla.detalles || []).forEach((d: any) => {
+      const subtotalCalc = (Number(d.PDCantInicial) || 0) + (Number(d.PDCantCompra) || 0) - (Number(d.PDCantAjuste) || 0);
+      const finalCalc = Number(d.PDCantFinal) || 0;
+      // No mostrar error por impacto de composiciones
+      if (Math.abs(subtotalCalc - (Number(d.PDCantSubtotal) || 0)) > 0.01) {
+        tieneErrores = true;
+      }
+    });
+  
+    const nuevoEstado = tieneErrores ? 'B' : 'C';
+  
+    try {
+      const updateData = {
         PlanillaVentaBruta: Number(totalBruto) || 0,
         PlanillaVentaNeta: Number(total) || 0,
         PlanillaVentaEfectivo: Number(efectivo) || 0,
@@ -148,6 +461,7 @@ export default function CompletarPlanilla() {
           <span className="planilla-info">{planilla.puntoVenta?.EmpresaNombre} - {new Date(planilla.PlanillaFecha).toLocaleDateString()}</span>
         </div>
         <div className="header-actions">
+          <button onClick={handleSave} disabled={isSaving} className="btn btn-secondary">{isSaving ? 'Guardando...' : 'Guardar'}</button>
           <button onClick={handleSubmit} disabled={isSaving} className="btn btn-primary">{isSaving ? 'Enviando...' : 'Enviar Planilla'}</button>
         </div>
       </div>
@@ -161,18 +475,77 @@ export default function CompletarPlanilla() {
             <tr><th>Producto</th><th>N. Inicial</th><th>Compras</th><th>Ajustes</th><th>Subtotal</th><th>Venta</th><th>Valor</th><th>N. Final</th></tr>
           </thead>
           <tbody>
-            {(planilla.detalles || []).map((detalle, index) => (
-              <tr key={index}>
-                <td>{detalle.producto?.ProductoNombre || 'Producto'}</td>
-                <td><input type="tel"  value={formatNumber(Number(detalle.PDCantInicial) || 0)} onChange={(e) => handleDetalleChange(index, 'PDCantInicial', parseNumber(e.target.value))} /></td>
-                <td><input type="tel"  value={formatNumber(Number(detalle.PDCantCompra) || 0)} onChange={(e) => handleDetalleChange(index, 'PDCantCompra', parseNumber(e.target.value))} /></td>
-                <td><input type="tel"  value={formatNumber(Number(detalle.PDCantAjuste) || 0)} onChange={(e) => handleDetalleChange(index, 'PDCantAjuste', parseNumber(e.target.value))} /></td>
-                <td><input type="tel"  value={formatNumber(Number(detalle.PDCantSubtotal) || 0)} onChange={(e) => handleDetalleChange(index, 'PDCantSubtotal', parseNumber(e.target.value))} /></td>
-                <td><input type="tel"  value={formatNumber(Number(detalle.PDCantVenta) || 0)} onChange={(e) => handleDetalleChange(index, 'PDCantVenta', parseNumber(e.target.value))} /></td>
-                <td><input type="tel"  value={formatNumber(Number(detalle.PDCantValor) || 0)} onChange={(e) => handleDetalleChange(index, 'PDCantValor', parseNumber(e.target.value))} /></td>
-                <td><input type="tel"  value={formatNumber(Number(detalle.PDCantFinal) || 0)} onChange={(e) => handleDetalleChange(index, 'PDCantFinal', parseNumber(e.target.value))} /></td>
+            {(planilla.detalles || []).map((detalle, index) => {
+              const soloContabilidad = detalle.producto?.ProductoSoloContabilidad;
+              const impactoPadre = (detalle as any)._impactoPadre || 0;
+              const esPadre = isProductoPadre(Number(detalle.PDProducto));
+              const esComponente = getNombreProductoPadre(Number(detalle.PDProducto)) !== null;
+              const rowStyle = esPadre ? {backgroundColor: '#eaf2f8'} : esComponente ? {backgroundColor: '#f4f9fc'} : {};
+              
+              return (
+              <tr key={index} style={rowStyle}>
+                <td>
+                  {detalle.producto?.ProductoNombre || 'Producto'}
+                  {soloContabilidad && <span style={{color:'#666', fontSize:'0.8em', marginLeft:'5px'}}>(Solo Contabilidad)</span>}
+                  {esPadre && <span style={{fontSize:'0.7em', marginLeft:'5px'}}>📦</span>}
+                  {esComponente && <span style={{fontSize:'0.7em', marginLeft:'5px', color:'#27ae60'}}>← comp.</span>}
+                </td>
+                <td><input 
+                  type="text" 
+                  inputMode="decimal" 
+                  disabled={soloContabilidad} 
+                  value={inputValues[`${index}-PDCantInicial`] ?? formatNumber(Number(detalle.PDCantInicial) || 0)}
+                  onChange={(e) => handleInputChange(`${index}-PDCantInicial`, e.target.value)}
+                  onBlur={() => handleInputBlur(index, 'PDCantInicial')}
+                  style={soloContabilidad ? {background:'#f0f0f0', color:'#999'} : {}} 
+                /></td>
+                <td><input 
+                  type="text" 
+                  inputMode="decimal" 
+                  disabled={soloContabilidad} 
+                  value={inputValues[`${index}-PDCantCompra`] ?? formatNumber(Number(detalle.PDCantCompra) || 0)}
+                  onChange={(e) => handleInputChange(`${index}-PDCantCompra`, e.target.value)}
+                  onBlur={() => handleInputBlur(index, 'PDCantCompra')}
+                  style={soloContabilidad ? {background:'#f0f0f0', color:'#999'} : {}} 
+                /></td>
+                <td><input 
+                  type="text" 
+                  inputMode="decimal" 
+                  disabled={soloContabilidad} 
+                  value={inputValues[`${index}-PDCantAjuste`] ?? formatNumber(Number(detalle.PDCantAjuste) || 0)}
+                  onChange={(e) => handleInputChange(`${index}-PDCantAjuste`, e.target.value)}
+                  onBlur={() => handleInputBlur(index, 'PDCantAjuste')}
+                  style={soloContabilidad ? {background:'#f0f0f0', color:'#999'} : {}} 
+                /></td>
+                <td style={{background:'#f5f5f5', color:'#666', fontWeight:'bold'}}>{formatNumber(Number(detalle.PDCantSubtotal) || 0)}</td>
+                <td><input 
+                  type="text" 
+                  inputMode="decimal" 
+                  value={inputValues[`${index}-PDCantVenta`] ?? formatNumber(Number(detalle.PDCantVenta) || 0)}
+                  onChange={(e) => handleInputChange(`${index}-PDCantVenta`, e.target.value)}
+                  onBlur={() => handleInputBlur(index, 'PDCantVenta')}
+                /></td>
+                <td><input 
+                  type="text" 
+                  inputMode="decimal" 
+                  value={inputValues[`${index}-PDCantValor`] ?? formatNumber(Number(detalle.PDCantValor) || 0)}
+                  onChange={(e) => handleInputChange(`${index}-PDCantValor`, e.target.value)}
+                  onBlur={() => handleInputBlur(index, 'PDCantValor')}
+                  placeholder={soloContabilidad ? "Ingrese valor" : ""} 
+                  style={soloContabilidad ? {background:'#fffbe6'} : {}} 
+                  title={soloContabilidad ? "Solo Contabilidad - Ingrese el valor manualmente" : ""} 
+                /></td>
+                <td style={{background: esPadre ? '#e8f4fc' : '#f5f5f5', color: esPadre ? '#2980b9' : '#666', fontWeight:'bold', position:'relative'}}>
+                  {soloContabilidad ? '-' : formatNumber(Number(detalle.PDCantFinal) || 0)}
+                  {esPadre && impactoPadre !== 0 && (
+                    <span style={{display:'block', fontSize:'10px', color:'#7f8c8d'}}>
+                      ({impactoPadre > 0 ? '+' : ''}{impactoPadre.toFixed(2)} comp.)
+                    </span>
+                  )}
+                </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
         <div className="total-bruto"><strong>Total de venta bruta: </strong> ${formatNumber(Number(totalBruto))}</div>
@@ -187,8 +560,8 @@ export default function CompletarPlanilla() {
             <tbody>
               {(planilla.otros || []).map((otro, index) => (
                 <tr key={index}>
-                  <td><input type="tel" value={otro.PODescripcion} onChange={(e) => handleOtroChange(index, 'PODescripcion', e.target.value)} placeholder="Descripcion" /></td>
-                  <td><input type="tel"  value={formatNumber(Number(otro.POValor) || 0)} onChange={(e) => handleOtroChange(index, 'POValor', parseNumber(e.target.value))} /></td>
+                  <td><input type="text" value={otro.PODescripcion} onChange={(e) => handleOtroChange(index, 'PODescripcion', e.target.value)} placeholder="Descripcion" /></td>
+                  <td><input type="text" inputMode="decimal" value={formatNumberInput(Number(otro.POValor) || 0)} onChange={(e) => handleOtroChange(index, 'POValor', parseNumber(e.target.value))} /></td>
                   <td>
                     <select value={otro.POCategoria} onChange={(e) => handleOtroChange(index, 'POCategoria', e.target.value)}>
                       <option value="Gastos">Gastos</option><option value="Compras">Compras</option><option value="Turnos">Turnos</option>
@@ -216,6 +589,8 @@ export default function CompletarPlanilla() {
         <div className="resumen-nota"><strong>Usuario:</strong> Recuerda que este reporte debe ser enviado a Diario</div>
         <div className="resumen-totales">
           <table className="totales-table"><tbody>
+            <tr><td>Venta Bruta</td><td className="value">${formatNumber(Number(totalBruto))}</td></tr>
+            <tr><td>Gastos</td><td className="value" style={{color: '#e74c3c'}}>-${formatNumber(Number(gastos))}</td></tr>
             <tr><td>Total</td><td className="value">${formatNumber(Number(total))}</td></tr>
             <tr><td>Efectivo</td><td className="value">${formatNumber(Number(efectivo))}</td></tr>
             <tr><td>Bancos</td><td className="value">${formatNumber(Number(bancos))}</td></tr>

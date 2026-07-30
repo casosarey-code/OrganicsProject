@@ -13,6 +13,8 @@ interface AuthContextType {
   register: (data: RegisterDTO) => Promise<void>;
   logout: () => void;
   hasPermission: (permName: string) => boolean;
+  hasRole: (roleName: string) => boolean;
+  userRoles: string[];
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -24,6 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [permissionsLoaded, setPermissionsLoaded] = useState(false);
+  const [userRoles, setUserRoles] = useState<string[]>([]);
 
   useEffect(() => {
     const storedToken = localStorage.getItem('token');
@@ -65,11 +68,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           
           // Extraer permisos de los roles
           const userPerms: string[] = [];
+          const rolesNames: string[] = [];
           const adminRoles = ['admin'];
           let isUserAdmin = false;
           
           if (data.roles && Array.isArray(data.roles)) {
             data.roles.forEach((role: any) => {
+              rolesNames.push(role.name);
               if (adminRoles.includes(role.name)) {
                 isUserAdmin = true;
               }
@@ -84,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
           
           setPermissions(userPerms);
+          setUserRoles(rolesNames);
           setIsAdmin(isUserAdmin);
           setPermissionsLoaded(true);
           localStorage.setItem('permissions', JSON.stringify(userPerms));
@@ -102,6 +108,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Admin siempre tiene todos los permisos
     if (isAdmin) return true;
     return permissions.includes(permName);
+  };
+
+  const hasRole = (roleName: string): boolean => {
+    return userRoles.includes(roleName);
   };
 
   const login = async (data: LoginDTO) => {
@@ -142,6 +152,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         register,
         logout,
         hasPermission,
+        hasRole,
+        userRoles,
       }}
     >
       {children}

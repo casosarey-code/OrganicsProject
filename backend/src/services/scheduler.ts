@@ -1,15 +1,76 @@
 import cron from 'node-cron';
 import prisma from '../config/db';
 
-const userId = 'system'; // Usuario sistema para tareas programadas
+/**
+ * Obtiene el N. Final de la última planilla cerrada (estado C o D) para una empresa.
+ * Retorna un Map con { productoId: nFinal }
+ */
+async function obtenerNFinalAnterior(empresaId: number): Promise<Map<number, number>> {
+  const nFinalMap = new Map<number, number>();
+  
+  // Buscar la última planilla enviada o revisada
+  const ultimaPlanilla = await prisma.planilla.findFirst({
+    where: {
+      PlanillaPuntoVenta: empresaId,
+      PlanillaEstado: { in: ['C', 'D'] }, // Enviado o Revisado
+    },
+    orderBy: { PlanillaFecha: 'desc' },
+    include: {
+      detalles: {
+        select: {
+          PDProducto: true,
+          PDCantFinal: true,
+        },
+      },
+    },
+  });
+  
+  if (ultimaPlanilla) {
+    // Llenar el Map con los N. Final
+    for (const detalle of ultimaPlanilla.detalles) {
+      nFinalMap.set(detalle.PDProducto, Number(detalle.PDCantFinal) || 0);
+    }
+    console.log(`[SCHEDULER] N. Final de planilla #${ultimaPlanilla.PlanillaID}: ${nFinalMap.size} productos`);
+  } else {
+    console.log(`[SCHEDULER] No hay planilla anterior para empresa ${empresaId}`);
+  }
+  
+  return nFinalMap;
+}
 
 async function crearPlanillasMasivas() {
   try {
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
 
+    // Calcular fecha de ayer para la planilla
+    const ayer = new Date(hoy);
+    ayer.setDate(ayer.getDate() - 1);
+
     console.log('=== [SCHEDULER] Iniciando creación masiva de planillas ===');
     console.log('Fecha de ejecución:', new Date().toISOString());
+    console.log('Fecha de planilla (ayer):', ayer.toISOString());
+
+    // Buscar usuario admin para asignar como creador
+    const adminUser = await prisma.users.findFirst({
+      where: {
+        isActive: true,
+        userRoles: {
+          some: {
+            role: {
+              name: 'admin'
+            }
+          }
+        }
+      }
+    });
+
+    if (!adminUser) {
+      console.error('[SCHEDULER] No se encontró usuario admin para crear planillas');
+      return;
+    }
+
+    const userId = adminUser.id;
 
     // Buscar empresas activas dentro del rango de fechas
     const empresas = await prisma.empresas.findMany({
@@ -35,21 +96,22 @@ async function crearPlanillasMasivas() {
 
     for (const empresa of empresas) {
       try {
-        // Verificar si ya existe planilla para hoy
-        const manana = new Date(hoy);
+        // Verificar si ya existe planilla para ayer
+        const manana = new Date(ayer);
         manana.setDate(manana.getDate() + 1);
 
         const planillaExistente = await prisma.planilla.findFirst({
           where: {
             PlanillaPuntoVenta: empresa.EmpresaID,
             PlanillaFecha: {
-              gte: hoy,
+              gte: ayer,
               lt: manana,
             },
           },
         });
 
         if (planillaExistente) {
+          console.log(`[SCHEDULER] Ya existe planilla para ${empresa.EmpresaNombre} en fecha ${ayer.toISOString().split('T')[0]}`);
           existentes++;
           continue;
         }
@@ -58,10 +120,14 @@ async function crearPlanillasMasivas() {
         const fechaVencimiento = new Date();
         fechaVencimiento.setHours(fechaVencimiento.getHours() + 36);
 
-        // Crear planilla
+        // Obtener N. Final de la planilla anterior (estado C o D)
+        const nFinalAnterior = await obtenerNFinalAnterior(empresa.EmpresaID);
+
+        // Crear planilla con N. Inicial = N. Final de planilla anterior
+        // Y productos SoloContabilidad = 0
         await prisma.planilla.create({
           data: {
-            PlanillaFecha: new Date(),
+            PlanillaFecha: ayer, // Usar fecha de ayer
             PlanillaPuntoVenta: empresa.EmpresaID,
             PlanillaCreaUsuario: userId,
             PlanillaCreaFecha: new Date(),
@@ -69,17 +135,22 @@ async function crearPlanillasMasivas() {
             PlanillaEnvioNotificacion: false,
             PlanillaFechaVencimiento: fechaVencimiento,
             detalles: empresa.empresaProductos.length > 0 ? {
-              create: empresa.empresaProductos.map((ep) => ({
-                PDProducto: ep.EPProducto,
-                PDCantInicial: 0,
-                PDCantCompra: 0,
-                PDCantAjuste: 0,
-                PDCantSubtotal: 0,
-                PDCantVenta: 0,
-                PDCantValor: 0,
-                PDCantFinal: 0,
-                PDUsuarioReg: userId,
-              })),
+              create: empresa.empresaProductos.map((ep) => {
+                // Si el producto es SoloContabilidad, usar N.Inicial = 0
+                const esSoloContabilidad = ep.producto?.ProductoSoloContabilidad === true;
+                const nInicial = esSoloContabilidad ? 0 : (nFinalAnterior.get(ep.EPProducto) || 0);
+                return {
+                  PDProducto: ep.EPProducto,
+                  PDCantInicial: nInicial,
+                  PDCantCompra: 0,
+                  PDCantAjuste: 0,
+                  PDCantSubtotal: nInicial,
+                  PDCantVenta: 0,
+                  PDCantValor: 0,
+                  PDCantFinal: nInicial,
+                  PDUsuarioReg: userId,
+                };
+              }),
             } : undefined,
           },
         });
@@ -119,7 +190,7 @@ export function initScheduler() {
 }
 
 // Exportar para ejecución manual
-export { crearPlanillasMasivas };
+export { crearPlanillasMasivas, obtenerNFinalAnterior };
 
 // ============================================
 // TAREA: Notificar Planillas Vencidas

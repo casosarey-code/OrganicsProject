@@ -4,26 +4,28 @@ import { authJwt, AuthRequest } from '../middleware/authJwt';
 import { validateRole } from '../middleware/validateRole';
 import { validatePermission } from '../middleware/validatePermission';
 import { z } from 'zod';
+import { obtenerNFinalAnterior } from '../services/planillaService';
 
 const router = Router();
 
 const createPlanillaSchema = z.object({
   PlanillaFecha: z.string().optional(),
-  PlanillaPuntoVenta: z.number().int().positive(),
-  PlanillaVentaBruta: z.number().int().optional().nullable(),
-  PlanillaVentaEfectivo: z.number().int().optional().nullable(),
-  PlanillaVentaBancos: z.number().int().optional().nullable(),
-  PlanillaVentaNeta: z.number().int().optional().nullable(),
-  PlanillaVentaBOLD: z.number().int().optional().nullable(),
-  PlanillaVentaNEQUI: z.number().int().optional().nullable(),
-  PlanillaVentaDAVIPLATA: z.number().int().optional().nullable(),
-  PlanillaVentaQR: z.number().int().optional().nullable(),
+  PlanillaFechaVencimiento: z.string().optional().nullable(),
+  PlanillaPuntoVenta: z.number().positive(),
+  PlanillaVentaBruta: z.number().optional().nullable(),
+  PlanillaVentaEfectivo: z.number().optional().nullable(),
+  PlanillaVentaBancos: z.number().optional().nullable(),
+  PlanillaVentaNeta: z.number().optional().nullable(),
+  PlanillaVentaBOLD: z.number().optional().nullable(),
+  PlanillaVentaNEQUI: z.number().optional().nullable(),
+  PlanillaVentaDAVIPLATA: z.number().optional().nullable(),
+  PlanillaVentaQR: z.number().optional().nullable(),
   detalles: z.array(z.object({
-    PDProducto: z.number().int().positive(),
-    PDCantInicial: z.number().int().min(0).default(0),
-    PDCantCompra: z.number().int().min(0).default(0),
-    PDCantAjuste: z.number().int().min(0).default(0),
-    PDCantVenta: z.number().int().min(0).default(0),
+    PDProducto: z.number().positive(),
+    PDCantInicial: z.number().min(0).default(0),
+    PDCantCompra: z.number().min(0).default(0),
+    PDCantAjuste: z.number().min(0).default(0),
+    PDCantVenta: z.number().min(0).default(0),
     PDCantValor: z.number().optional(),
   })).optional(),
   otros: z.array(z.object({
@@ -36,21 +38,22 @@ const createPlanillaSchema = z.object({
 
 const updatePlanillaSchema = z.object({
   PlanillaFecha: z.string().optional(),
-  PlanillaPuntoVenta: z.number().int().positive().optional(),
-  PlanillaVentaBruta: z.number().int().optional().nullable(),
-  PlanillaVentaEfectivo: z.number().int().optional().nullable(),
-  PlanillaVentaBancos: z.number().int().optional().nullable(),
-  PlanillaVentaNeta: z.number().int().optional().nullable(),
-  PlanillaVentaBOLD: z.number().int().optional().nullable(),
-  PlanillaVentaNEQUI: z.number().int().optional().nullable(),
-  PlanillaVentaDAVIPLATA: z.number().int().optional().nullable(),
-  PlanillaVentaQR: z.number().int().optional().nullable(),
+  PlanillaFechaVencimiento: z.string().optional().nullable(),
+  PlanillaPuntoVenta: z.number().positive().optional(),
+  PlanillaVentaBruta: z.number().optional().nullable(),
+  PlanillaVentaEfectivo: z.number().optional().nullable(),
+  PlanillaVentaBancos: z.number().optional().nullable(),
+  PlanillaVentaNeta: z.number().optional().nullable(),
+  PlanillaVentaBOLD: z.number().optional().nullable(),
+  PlanillaVentaNEQUI: z.number().optional().nullable(),
+  PlanillaVentaDAVIPLATA: z.number().optional().nullable(),
+  PlanillaVentaQR: z.number().optional().nullable(),
   detalles: z.array(z.object({
-    PDProducto: z.number().int(),
-    PDCantInicial: z.number().int().optional(),
-    PDCantCompra: z.number().int().optional(),
-    PDCantAjuste: z.number().int().optional(),
-    PDCantVenta: z.number().int().optional(),
+    PDProducto: z.number(),
+    PDCantInicial: z.number().optional(),
+    PDCantCompra: z.number().optional(),
+    PDCantAjuste: z.number().optional(),
+    PDCantVenta: z.number().optional(),
     PDCantValor: z.number().optional(),
   })).optional(),
   otros: z.array(z.object({
@@ -63,18 +66,17 @@ const updatePlanillaSchema = z.object({
 
 router.use(authJwt);
 
-router.get('/', validatePermission('planillas_read'), async (req: AuthRequest, res: Response) => {
+router.get('/', validatePermission('planillas_pv_ver'), async (req: AuthRequest, res: Response) => {
   try {
     const { fecha, puntoVenta, estado } = req.query;
     const userId = req.user!.userId;
 
-    // Obtener datos del usuario para saber su empresa
+    // Obtener datos del usuario incluyendo roles
     const usuario = await prisma.users.findUnique({
       where: { id: userId },
       select: { UserEmpresaID: true, userRoles: { include: { role: true } } },
     });
 
-    // Verificar si es admin
     const isAdmin = usuario?.userRoles.some((ur) => ur.role.name === 'admin');
 
     const where: any = {};
@@ -82,16 +84,29 @@ router.get('/', validatePermission('planillas_read'), async (req: AuthRequest, r
     if (puntoVenta) where.PlanillaPuntoVenta = parseInt(puntoVenta as string);
     if (estado) where.PlanillaEstado = estado;
 
-    // Si no es admin, filtrar solo las planillas de su empresa
-    if (!isAdmin && usuario?.UserEmpresaID) {
-      where.PlanillaPuntoVenta = usuario.UserEmpresaID;
-    }
+    // Todas las planillas sin filtro de empresa
 
+    // Consulta optimizada sin incluir relaciones pesadas
     const planillas = await prisma.planilla.findMany({
       where,
-      include: {
-        puntoVenta: true,
-        creador: { select: { id: true, fullName: true, email: true } },
+      select: {
+        PlanillaID: true,
+        PlanillaFecha: true,
+        PlanillaPuntoVenta: true,
+        PlanillaEstado: true,
+        PlanillaVentaBruta: true,
+        PlanillaVentaNeta: true,
+        PlanillaCreaFecha: true,
+        puntoVenta: {
+          select: {
+            EmpresaID: true,
+            EmpresaNombre: true,
+            EmpresaTipo: true,
+          }
+        },
+        creador: {
+          select: { id: true, fullName: true, email: true }
+        },
         _count: { select: { detalles: true, otros: true } },
       },
       orderBy: { PlanillaFecha: 'desc' },
@@ -104,7 +119,7 @@ router.get('/', validatePermission('planillas_read'), async (req: AuthRequest, r
   }
 });
 
-router.get('/:id', validatePermission('planillas_read'), async (req: AuthRequest, res: Response) => {
+router.get('/:id', validatePermission('planillas_update'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const userId = req.user!.userId;
@@ -126,6 +141,7 @@ router.get('/:id', validatePermission('planillas_read'), async (req: AuthRequest
         aprobUser: { select: { id: true, fullName: true } },
         detalles: {
           include: { producto: true },
+          orderBy: { PDOrden: 'asc' },
         },
         otros: true,
       },
@@ -197,33 +213,67 @@ router.post('/', validatePermission('planillas_create'), async (req: AuthRequest
     }
 
     // Obtener productos de la empresa desde EmpresaPlanilla
+    // INCLUIR productos con su información (para verificar SoloContabilidad)
     const empresaProductos = await prisma.empresaPlanilla.findMany({
       where: {
         EmpresaID: data.PlanillaPuntoVenta,
         EPActivo: true,
       },
-      include: {
-        producto: true,
+      select: {
+        EPProducto: true,
+        EPOrden: true,
+        producto: {
+          select: {
+            ProductoID: true,
+            ProductoSoloContabilidad: true,
+          },
+        },
       },
+      orderBy: { EPOrden: 'asc' },
     });
 
-    // Si el usuario no envía detalles, clonar desde EmpresaPlanilla
+    // Obtener N. Final de la planilla anterior (estado C o D)
+    console.log(`[POST planilla] EmpresaID: ${data.PlanillaPuntoVenta}, Buscando N. Final...`);
+    const nFinalAnterior = await obtenerNFinalAnterior(data.PlanillaPuntoVenta);
+    console.log(`[POST planilla] N. Final encontrado: ${nFinalAnterior.size} productos`);
+
+    // Si el usuario no envía detalles, clonar desde EmpresaPlanilla con N. Final anterior
     const detallesData = data.detalles && data.detalles.length > 0 
       ? data.detalles
       : empresaProductos.length > 0 
-        ? empresaProductos.map((ep) => ({
-          PDProducto: ep.EPProducto,
-          PDCantInicial: 0,
-          PDCantCompra: 0,
-          PDCantAjuste: 0,
-          PDCantVenta: 0,
-          PDCantValor: 0,
-        }))
+        ? empresaProductos.map((ep) => {
+          // Si el producto es SoloContabilidad, usar N.Inicial = 0
+          // De lo contrario, usar el N.Final de la planilla anterior
+          const esSoloContabilidad = ep.producto?.ProductoSoloContabilidad === true;
+          const nInicial = esSoloContabilidad ? 0 : (nFinalAnterior.get(ep.EPProducto) || 0);
+          return {
+            PDProducto: ep.EPProducto,
+            PDCantInicial: nInicial,
+            PDCantCompra: 0,
+            PDCantAjuste: 0,
+            PDCantSubtotal: nInicial, // Subtotal = Inicial
+            PDCantVenta: 0,
+            PDCantValor: 0,
+            PDCantFinal: nInicial, // Final = Inicial
+            PDOrden: ep.EPOrden,
+          };
+        })
         : [];
+
+    // Crear fecha con hora local del servidor (sin timezone)
+    const crearFechaLocal = (fechaStr?: string) => {
+      if (!fechaStr) {
+        const now = new Date();
+        return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
+      }
+      const [year, month, day] = fechaStr.split('T')[0].split('-').map(Number);
+      return new Date(year, month - 1, day, 12, 0, 0);
+    };
 
     const planilla = await prisma.planilla.create({
       data: {
-        PlanillaFecha: data.PlanillaFecha ? new Date(data.PlanillaFecha) : new Date(),
+        PlanillaFecha: crearFechaLocal(data.PlanillaFecha),
+        PlanillaFechaVencimiento: data.PlanillaFechaVencimiento ? new Date(data.PlanillaFechaVencimiento) : null,
         PlanillaPuntoVenta: data.PlanillaPuntoVenta,
         PlanillaCreaUsuario: req.user!.userId,
         PlanillaVentaBruta: data.PlanillaVentaBruta,
@@ -240,8 +290,11 @@ router.post('/', validatePermission('planillas_create'), async (req: AuthRequest
             PDCantInicial: d.PDCantInicial || 0,
             PDCantCompra: d.PDCantCompra || 0,
             PDCantAjuste: d.PDCantAjuste || 0,
+            PDCantSubtotal: d.PDCantSubtotal ?? (d.PDCantInicial || 0),
             PDCantVenta: d.PDCantVenta || 0,
             PDCantValor: d.PDCantValor || 0,
+            PDCantFinal: d.PDCantFinal ?? (d.PDCantInicial || 0),
+            PDOrden: d.PDOrden,
             PDUsuarioReg: req.user!.userId,
           })),
         } : undefined,
@@ -302,16 +355,17 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
       }
     }
 
-    // Actualizar planilla
+    // Actualizar planilla con totales del frontend (NO recalcular)
     const planilla = await prisma.planilla.update({
       where: { PlanillaID: parseInt(id) },
       data: {
         PlanillaFecha: data.PlanillaFecha ? new Date(data.PlanillaFecha) : undefined,
+        PlanillaFechaVencimiento: data.PlanillaFechaVencimiento ? new Date(data.PlanillaFechaVencimiento) : null,
         PlanillaPuntoVenta: data.PlanillaPuntoVenta,
-        PlanillaVentaBruta: data.PlanillaVentaBruta,
-        PlanillaVentaEfectivo: data.PlanillaVentaEfectivo,
-        PlanillaVentaBancos: data.PlanillaVentaBancos,
-        PlanillaVentaNeta: data.PlanillaVentaNeta,
+        PlanillaVentaBruta: data.PlanillaVentaBruta ?? 0,
+        PlanillaVentaEfectivo: data.PlanillaVentaEfectivo ?? 0,
+        PlanillaVentaBancos: data.PlanillaVentaBancos ?? 0,
+        PlanillaVentaNeta: data.PlanillaVentaNeta ?? 0,
         PlanillaEstado: data.PlanillaEstado,
         PlanillaVentaBOLD: data.PlanillaVentaBOLD,
         PlanillaVentaNEQUI: data.PlanillaVentaNEQUI,
@@ -320,27 +374,48 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
       },
     });
 
-    // Actualizar detalles si existen
+    // Actualizar detalles si existen - buscar por producto para evitar problemas de orden
     if (data.detalles) {
-      // Eliminar detalles existentes
-      await prisma.planillaDetalle.deleteMany({ where: { PlanillaID: parseInt(id) } });
-      
-      // Crear nuevos detalles
-      if (data.detalles.length > 0) {
-        await prisma.planillaDetalle.createMany({
-          data: data.detalles.map((d) => ({
+      for (const d of data.detalles) {
+        // Buscar el detalle por PlanillaID y PDProducto
+        const detalleExistente = await prisma.planillaDetalle.findFirst({
+          where: {
             PlanillaID: parseInt(id),
             PDProducto: d.PDProducto,
-            PDCantInicial: d.PDCantInicial || 0,
-            PDCantCompra: d.PDCantCompra || 0,
-            PDCantAjuste: d.PDCantAjuste || 0,
-            PDCantSubtotal: d.PDCantSubtotal,
-            PDCantVenta: d.PDCantVenta || 0,
-            PDCantValor: d.PDCantValor || 0,
-            PDCantFinal: d.PDCantFinal,
-            PDUsuarioReg: req.user!.userId,
-          })),
+          },
         });
+        
+        if (detalleExistente) {
+          // Actualizar el detalle existente usando PDID
+          await prisma.planillaDetalle.update({
+            where: { PDID: detalleExistente.PDID },
+            data: {
+              PDCantInicial: d.PDCantInicial || 0,
+              PDCantCompra: d.PDCantCompra || 0,
+              PDCantAjuste: d.PDCantAjuste || 0,
+              PDCantSubtotal: d.PDCantSubtotal,
+              PDCantVenta: d.PDCantVenta || 0,
+              PDCantValor: d.PDCantValor || 0,
+              PDCantFinal: d.PDCantFinal,
+            },
+          });
+        } else {
+          // Crear nuevo detalle si no existe
+          await prisma.planillaDetalle.create({
+            data: {
+              PlanillaID: parseInt(id),
+              PDProducto: d.PDProducto,
+              PDCantInicial: d.PDCantInicial || 0,
+              PDCantCompra: d.PDCantCompra || 0,
+              PDCantAjuste: d.PDCantAjuste || 0,
+              PDCantSubtotal: d.PDCantSubtotal,
+              PDCantVenta: d.PDCantVenta || 0,
+              PDCantValor: d.PDCantValor || 0,
+              PDCantFinal: d.PDCantFinal,
+              PDUsuarioReg: req.user!.userId,
+            },
+          });
+        }
       }
     }
 
@@ -368,7 +443,10 @@ router.put('/:id', validatePermission('planillas_update'), async (req: AuthReque
     const planillaActualizada = await prisma.planilla.findUnique({
       where: { PlanillaID: parseInt(id) },
       include: {
-        detalles: { include: { producto: true } },
+        detalles: { 
+          include: { producto: true },
+          orderBy: { PDOrden: 'asc' },
+        },
         otros: true,
       },
     });
@@ -446,6 +524,108 @@ router.patch('/:id/marcar-revisada', validatePermission('planillas_update'), asy
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al marcar como revisada' });
+  }
+});
+
+// POST /api/planillas/:id/reordenar - Reordenar detalles de una planilla
+router.post('/:id/reordenar', validatePermission('planillas_update'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { ordenes } = req.body as { ordenes: { pdId: number; nuevoOrden: number }[] };
+    
+    if (!ordenes || !Array.isArray(ordenes)) {
+      res.status(400).json({ error: 'Datos inválidos' });
+      return;
+    }
+
+    // Verificar que la planilla existe
+    const planilla = await prisma.planilla.findUnique({
+      where: { PlanillaID: parseInt(id) },
+    });
+
+    if (!planilla) {
+      res.status(404).json({ error: 'Planilla no encontrada' });
+      return;
+    }
+
+    // Verificar acceso (admin o misma empresa)
+    const usuario = await prisma.users.findUnique({
+      where: { id: req.user!.userId },
+      select: { UserEmpresaID: true, userRoles: { include: { role: true } } },
+    });
+    const isAdmin = usuario?.userRoles.some((ur) => ur.role.name === 'admin');
+    
+    if (!isAdmin && usuario?.UserEmpresaID && planilla.PlanillaPuntoVenta !== usuario.UserEmpresaID) {
+      res.status(403).json({ error: 'No tienes acceso a esta planilla' });
+      return;
+    }
+
+    // Actualizar cada orden
+    await prisma.$transaction(
+      ordenes.map((item) =>
+        prisma.planillaDetalle.update({
+          where: { PDID: item.pdId },
+          data: { PDOrden: item.nuevoOrden },
+        })
+      )
+    );
+
+    res.json({ message: 'Orden actualizado' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al reordenar detalles' });
+  }
+});
+
+// POST /api/planillas/:id/aplicar-orden-empresa - Copiar EPOrden a PDOrden
+router.post('/:id/aplicar-orden-empresa', validatePermission('planillas_update'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    // Verificar que la planilla existe y obtener la empresa
+    const planilla = await prisma.planilla.findUnique({
+      where: { PlanillaID: parseInt(id) },
+      include: {
+        detalles: {
+          select: { PDID: true, PDProducto: true },
+        },
+      },
+    });
+
+    if (!planilla) {
+      res.status(404).json({ error: 'Planilla no encontrada' });
+      return;
+    }
+
+    // Obtener los productos de la empresa con su orden
+    const empresaProductos = await prisma.empresaPlanilla.findMany({
+      where: { EmpresaID: planilla.PlanillaPuntoVenta },
+      select: { EPProducto: true, EPOrden: true },
+    });
+
+    // Crear un mapa de producto -> orden
+    const ordenMap = new Map(
+      empresaProductos.map((ep) => [ep.EPProducto, ep.EPOrden])
+    );
+
+    // Actualizar cada detalle con el orden de la empresa
+    const updates = planilla.detalles.map((detalle) => {
+      const nuevoOrden = ordenMap.get(detalle.PDProducto);
+      if (nuevoOrden !== undefined) {
+        return prisma.planillaDetalle.update({
+          where: { PDID: detalle.PDID },
+          data: { PDOrden: nuevoOrden },
+        });
+      }
+      return null;
+    }).filter(Boolean);
+
+    await prisma.$transaction(updates);
+
+    res.json({ message: 'Orden aplicado correctamente desde empresa' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al aplicar orden de empresa' });
   }
 });
 

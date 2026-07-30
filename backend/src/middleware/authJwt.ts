@@ -35,10 +35,18 @@ export const authJwt = async (
       return;
     }
 
+    // Verificar si es admin
+    const userRoles = await prisma.userRoles.findMany({
+      where: { userId: user.id },
+      include: { role: true },
+    });
+    const isAdmin = userRoles.some((ur) => ur.role.name === 'admin');
+
     req.user = {
       userId: user.id,
       email: user.email,
     };
+    (req as any).isAdmin = isAdmin;
 
     next();
   } catch (error) {

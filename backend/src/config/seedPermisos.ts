@@ -6,6 +6,7 @@ const permissions = [
   { name: 'planillas_create', resource: 'planillas', action: 'create' },
   { name: 'planillas_update', resource: 'planillas', action: 'update' },
   { name: 'planillas_delete', resource: 'planillas', action: 'delete' },
+  { name: 'planillas_pv_ver', resource: 'planillas', action: 'pv_ver' },
   // Empresas
   { name: 'empresas_read', resource: 'empresas', action: 'read' },
   { name: 'empresas_create', resource: 'empresas', action: 'create' },
@@ -50,12 +51,45 @@ const permissions = [
 export async function seedPermissions() {
   console.log('Verificando permisos...');
   
+  // Crear/upset permisos
   for (const perm of permissions) {
     await prisma.permissions.upsert({
       where: { name: perm.name },
       update: {},
       create: perm,
     });
+  }
+  
+  // Asignar TODOS los permisos al rol Admin
+  const rolAdmin = await prisma.roles.findFirst({ 
+    where: { name: 'Admin' } 
+  });
+  
+  if (rolAdmin) {
+    console.log('Asignando permisos al rol Admin...');
+    for (const perm of permissions) {
+      const permission = await prisma.permissions.findUnique({ 
+        where: { name: perm.name } 
+      });
+      if (permission) {
+        await prisma.rolePermissions.upsert({
+          where: { 
+            roleId_permissionId: { 
+              roleId: rolAdmin.id, 
+              permissionId: permission.id 
+            } 
+          },
+          update: {},
+          create: { 
+            roleId: rolAdmin.id, 
+            permissionId: permission.id 
+          },
+        });
+      }
+    }
+    console.log('Permisos asignados al Admin correctamente');
+  } else {
+    console.log('Rol Admin no encontrado');
   }
   
   console.log('Permisos verificados/creados correctamente');

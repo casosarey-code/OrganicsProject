@@ -149,3 +149,41 @@ Para enviar correos, configurar SMTP en `configuracionsmtp`:
 
 ## 📝 Licencia
 ISC
+
+
+**Para ejecutar el backend en Hostinger:**
+
+**Opción 1: Directamente (se detiene al cerrar terminal)**
+```bash
+cd ~/OrganicsProject/backend
+npm start
+```
+
+**Opción 2: Con PM2 (recomendado - corre en segundo plano)**
+```bash
+# Instalar PM2
+npm install -g pm2
+
+# Iniciar el backend
+cd ~/OrganicsProject/backend
+pm2 start npm --name "backend" -- start
+
+# Guardar configuración para reiniciar automáticamente
+pm2 save
+pm2 startup
+```
+
+**Comandos útiles de PM2:**
+```bash
+pm2 status          # Ver estado
+pm2 logs backend    # Ver logs
+pm2 restart backend # Reiniciar
+pm2 stop backend    # Detener
+```
+
+**Verificar que funciona:**
+```bash
+curl http://localhost:5000/api/health
+```
+
+Debe responder: `{"status":"ok",...}`
