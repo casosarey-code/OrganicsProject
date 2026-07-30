@@ -527,4 +527,106 @@ router.patch('/:id/marcar-revisada', validatePermission('planillas_update'), asy
   }
 });
 
+// POST /api/planillas/:id/reordenar - Reordenar detalles de una planilla
+router.post('/:id/reordenar', validatePermission('planillas_update'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { ordenes } = req.body as { ordenes: { pdId: number; nuevoOrden: number }[] };
+    
+    if (!ordenes || !Array.isArray(ordenes)) {
+      res.status(400).json({ error: 'Datos inválidos' });
+      return;
+    }
+
+    // Verificar que la planilla existe
+    const planilla = await prisma.planilla.findUnique({
+      where: { PlanillaID: parseInt(id) },
+    });
+
+    if (!planilla) {
+      res.status(404).json({ error: 'Planilla no encontrada' });
+      return;
+    }
+
+    // Verificar acceso (admin o misma empresa)
+    const usuario = await prisma.users.findUnique({
+      where: { id: req.user!.userId },
+      select: { UserEmpresaID: true, userRoles: { include: { role: true } } },
+    });
+    const isAdmin = usuario?.userRoles.some((ur) => ur.role.name === 'admin');
+    
+    if (!isAdmin && usuario?.UserEmpresaID && planilla.PlanillaPuntoVenta !== usuario.UserEmpresaID) {
+      res.status(403).json({ error: 'No tienes acceso a esta planilla' });
+      return;
+    }
+
+    // Actualizar cada orden
+    await prisma.$transaction(
+      ordenes.map((item) =>
+        prisma.planillaDetalle.update({
+          where: { PDID: item.pdId },
+          data: { PDOrden: item.nuevoOrden },
+        })
+      )
+    );
+
+    res.json({ message: 'Orden actualizado' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al reordenar detalles' });
+  }
+});
+
+// POST /api/planillas/:id/aplicar-orden-empresa - Copiar EPOrden a PDOrden
+router.post('/:id/aplicar-orden-empresa', validatePermission('planillas_update'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    // Verificar que la planilla existe y obtener la empresa
+    const planilla = await prisma.planilla.findUnique({
+      where: { PlanillaID: parseInt(id) },
+      include: {
+        detalles: {
+          select: { PDID: true, PDProducto: true },
+        },
+      },
+    });
+
+    if (!planilla) {
+      res.status(404).json({ error: 'Planilla no encontrada' });
+      return;
+    }
+
+    // Obtener los productos de la empresa con su orden
+    const empresaProductos = await prisma.empresaPlanilla.findMany({
+      where: { EmpresaID: planilla.PlanillaPuntoVenta },
+      select: { EPProducto: true, EPOrden: true },
+    });
+
+    // Crear un mapa de producto -> orden
+    const ordenMap = new Map(
+      empresaProductos.map((ep) => [ep.EPProducto, ep.EPOrden])
+    );
+
+    // Actualizar cada detalle con el orden de la empresa
+    const updates = planilla.detalles.map((detalle) => {
+      const nuevoOrden = ordenMap.get(detalle.PDProducto);
+      if (nuevoOrden !== undefined) {
+        return prisma.planillaDetalle.update({
+          where: { PDID: detalle.PDID },
+          data: { PDOrden: nuevoOrden },
+        });
+      }
+      return null;
+    }).filter(Boolean);
+
+    await prisma.$transaction(updates);
+
+    res.json({ message: 'Orden aplicado correctamente desde empresa' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al aplicar orden de empresa' });
+  }
+});
+
 export default router;

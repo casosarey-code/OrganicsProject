@@ -93,6 +93,7 @@ export interface PlanillaDetalle {
   PDID: number;
   PlanillaID: number;
   PDProducto: number;
+  PDOrden?: number;
   PDCantInicial: number;
   PDCantCompra: number;
   PDCantAjuste: number;

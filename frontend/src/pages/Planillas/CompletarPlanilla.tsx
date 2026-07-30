@@ -10,6 +10,7 @@ interface Composicion {
   PCProducto: number; // Producto padre (POLLO)
   PCComponente: number; // Componente (POLLO 1/2)
   PCCantidad: number; // Cuántas unidades del componente = 1 del padre
+  PCEmpresa: number | null; // Empresa específica o null para global
   producto?: { ProductoID: number; ProductoNombre: string };
   componente?: { ProductoID: number; ProductoNombre: string };
 }
@@ -34,11 +35,17 @@ export default function CompletarPlanilla() {
     if (id) fetchPlanilla();
   }, [id]);
 
-  // Función para cargar composiciones del backend
+  // Función para cargar composiciones del backend (filtradas por empresa)
   const fetchComposiciones = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('/api/productos/composicion', {
+      // Pasar empresaId si está disponible en la planilla
+      const empresaId = planilla?.puntoVenta?.EmpresaID;
+      const url = empresaId 
+        ? `/api/productos/composicion?empresaId=${empresaId}`
+        : '/api/productos/composicion';
+      
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -49,7 +56,7 @@ export default function CompletarPlanilla() {
     } catch (err) {
       console.error('Error al cargar composiciones:', err);
     }
-  }, []);
+  }, [planilla?.puntoVenta?.EmpresaID]);
 
   const fetchPlanilla = async () => {
     setIsLoading(true);
@@ -81,6 +88,17 @@ export default function CompletarPlanilla() {
   const calcularImpactoComposiciones = useCallback((detalles: any[]): Map<number, number> => {
     const impacto = new Map<number, number>();
     
+    // Deduplicar: agrupar por PCProducto+PCComponente, preferring empresa-specific over null
+    const composicionMap = new Map<string, Composicion>();
+    composiciones.forEach(c => {
+      const key = `${c.PCProducto}-${c.PCComponente}`;
+      const existing = composicionMap.get(key);
+      // Si no existe, agregar. Si existe y el nuevo es específico (empresa) y el anterior es null, reemplazar
+      if (!existing || (c.PCEmpresa !== null && existing.PCEmpresa === null)) {
+        composicionMap.set(key, c);
+      }
+    });
+    
     // Para cada detalle vendido
     detalles.forEach((detalle) => {
       const venta = Number(detalle.PDCantVenta) || 0;
@@ -89,18 +107,13 @@ export default function CompletarPlanilla() {
       const productoId = Number(detalle.PDProducto);
       
       // Buscar composiciones donde este producto es COMPONENTE
-      // PCComponente = el producto que se vende (POLLO 1/2)
-      // PCProducto = el producto padre cuyo inventario se afecta (POLLO)
-      const composicionesDondeEsComponente = composiciones.filter(c => c.PCComponente === productoId);
+      const composicionesDondeEsComponente = Array.from(composicionMap.values()).filter(c => c.PCComponente === productoId);
       
       composicionesDondeEsComponente.forEach(comp => {
         const padreId = comp.PCProducto;
-        // Cuántas unidades del padre se "consumen" por cada venta del componente
-        // PCCantidad indica cuánto del componente = 1 del padre
-        // Ej: Si PCCantidad = 0.5, entonces 2 POLLO 1/2 = 1 POLLO
         const cantidadEquivalente = venta * comp.PCCantidad;
         
-        // Restar del inventario del padre
+        // RESTAR del inventario del padre cuando se vende el componente
         const impactoActual = impacto.get(padreId) || 0;
         impacto.set(padreId, impactoActual - cantidadEquivalente);
       });
@@ -276,10 +289,23 @@ export default function CompletarPlanilla() {
     }
   };
 
-  const formatNumber = (num: number) => {
-    if (num === 0) return '0';
+  // Para inputs: sin separadores de miles
+  const formatNumberInput = (num: number) => {
+    if (isNaN(num) || num === null || num === undefined) return '0';
     if (Number.isInteger(num)) return num.toString();
     return num.toFixed(2).replace(/\.?0+$/, '');
+  };
+
+  // Para resúmenes: con separadores de miles (formato colombiano)
+  const formatNumber = (num: number) => {
+    if (isNaN(num) || num === null || num === undefined) return '0';
+    if (Number.isInteger(num)) {
+      return num.toLocaleString('es-CO');
+    }
+    const fixed = num.toFixed(2);
+    const parts = fixed.split('.');
+    parts[0] = parseInt(parts[0]).toLocaleString('es-CO');
+    return parts.join('.');
   };
   
   const parseNumber = (str: string) => {
@@ -299,17 +325,28 @@ export default function CompletarPlanilla() {
   };
 
   const calcularTotales = () => {
-    if (!planilla) return { totalBruto: 0, efectivo: 0, bancos: 0, total: 0 };
+    if (!planilla) return { totalBruto: 0, efectivo: 0, bancos: 0, total: 0, gastos: 0, totalConGastos: 0 };
     // Incluir TODOS los productos en los totales
     const detalles = planilla.detalles || [];
     const totalBruto = detalles.reduce((sum, d) => sum + (Number(d.PDCantValor) || 0), 0);
     const otros = planilla.otros || [];
+    // Gastos puros: Gastos, Compras, Turnos, Memorias
     const otrosGastos = otros.filter((o) => ['Gastos', 'Compras', 'Turnos', 'Memorias'].includes(o.POCategoria)).reduce((sum, o) => sum + (Number(o.POValor) || 0), 0);
+    // Bancos: Bold, Nequi, Daviplata, QR, Datafono
     const otrosBancos = otros.filter((o) => ['Bold', 'Nequi', 'Daviplata', 'QR', 'Datafono'].includes(o.POCategoria)).reduce((sum, o) => sum + (Number(o.POValor) || 0), 0);
-    return { totalBruto, efectivo: totalBruto - otrosBancos, bancos: otrosBancos, total: totalBruto - otrosGastos };
+    // Total neto después de restar gastos
+    const total = totalBruto - otrosGastos;
+    return { 
+      totalBruto, 
+      efectivo: totalBruto - otrosBancos, 
+      bancos: otrosBancos, 
+      total, 
+      gastos: otrosGastos,
+      totalConGastos: totalBruto - otrosGastos
+    };
   };
 
-  const { totalBruto, efectivo, bancos, total } = calcularTotales();
+  const { totalBruto, efectivo, bancos, total, gastos } = calcularTotales();
 
   // Función para verificar si un producto es padre de alguna composición
   const isProductoPadre = (productoId: number): boolean => {
@@ -524,7 +561,7 @@ export default function CompletarPlanilla() {
               {(planilla.otros || []).map((otro, index) => (
                 <tr key={index}>
                   <td><input type="text" value={otro.PODescripcion} onChange={(e) => handleOtroChange(index, 'PODescripcion', e.target.value)} placeholder="Descripcion" /></td>
-                  <td><input type="text" inputMode="decimal" value={formatNumber(Number(otro.POValor) || 0)} onChange={(e) => handleOtroChange(index, 'POValor', parseNumber(e.target.value))} /></td>
+                  <td><input type="text" inputMode="decimal" value={formatNumberInput(Number(otro.POValor) || 0)} onChange={(e) => handleOtroChange(index, 'POValor', parseNumber(e.target.value))} /></td>
                   <td>
                     <select value={otro.POCategoria} onChange={(e) => handleOtroChange(index, 'POCategoria', e.target.value)}>
                       <option value="Gastos">Gastos</option><option value="Compras">Compras</option><option value="Turnos">Turnos</option>
@@ -552,6 +589,8 @@ export default function CompletarPlanilla() {
         <div className="resumen-nota"><strong>Usuario:</strong> Recuerda que este reporte debe ser enviado a Diario</div>
         <div className="resumen-totales">
           <table className="totales-table"><tbody>
+            <tr><td>Venta Bruta</td><td className="value">${formatNumber(Number(totalBruto))}</td></tr>
+            <tr><td>Gastos</td><td className="value" style={{color: '#e74c3c'}}>-${formatNumber(Number(gastos))}</td></tr>
             <tr><td>Total</td><td className="value">${formatNumber(Number(total))}</td></tr>
             <tr><td>Efectivo</td><td className="value">${formatNumber(Number(efectivo))}</td></tr>
             <tr><td>Bancos</td><td className="value">${formatNumber(Number(bancos))}</td></tr>

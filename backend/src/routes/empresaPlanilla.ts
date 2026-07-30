@@ -197,6 +197,40 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// POST /api/empresa-planilla/reordenar - Reordenar productos de una empresa
+router.post('/reordenar', async (req: AuthRequest, res: Response) => {
+  try {
+    const { empresaId, ordenes } = req.body as { empresaId: number; ordenes: { epId: number; nuevoOrden: number }[] };
+    
+    if (!empresaId || !ordenes || !Array.isArray(ordenes)) {
+      res.status(400).json({ error: 'Datos inválidos' });
+      return;
+    }
+
+    // Actualizar cada orden
+    await prisma.$transaction(
+      ordenes.map((item) =>
+        prisma.empresaPlanilla.update({
+          where: { EPID: item.epId },
+          data: { EPOrden: item.nuevoOrden },
+        })
+      )
+    );
+
+    // Obtener productos actualizados
+    const productos = await prisma.empresaPlanilla.findMany({
+      where: { EmpresaID: empresaId },
+      include: { producto: { select: { ProductoID: true, ProductoNombre: true, ProductoCodigo: true } } },
+      orderBy: { EPOrden: 'asc' },
+    });
+
+    res.json({ message: 'Orden actualizado', productos });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al reordenar productos' });
+  }
+});
+
 // DELETE /api/empresa-planilla/:id - Eliminar registro
 router.delete('/:id', async (req: AuthRequest, res: Response) => {
   try {

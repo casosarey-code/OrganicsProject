@@ -109,6 +109,7 @@ model Empresas {
 
   empresaProductos EmpresaPlanilla[]
   usuarios         Users[]           @relation("UsuarioEmpresa")
+  composiciones   ProductoComposicion[]
 
   creator   Users?     @relation("EmpresaCreador", fields: [EmpresaCreaUsuario], references: [id])
   planillas Planilla[]
@@ -138,11 +139,13 @@ model ProductoComposicion {
   PCProducto    Int     @map("PCProducto")
   PCComponente  Int     @map("PCComponente")
   PCCantidad    Decimal @default(1) @map("PCCantidad") @db.Decimal(10, 4)
+  PCEmpresa     Int?    @map("PCEmpresa") // NULL = aplica a todas las empresas
 
   producto   Productos @relation("ProductoPadre", fields: [PCProducto], references: [ProductoID], onDelete: Cascade)
   componente Productos @relation("ProductoComponente", fields: [PCComponente], references: [ProductoID], onDelete: Cascade)
+  empresa    Empresas? @relation(fields: [PCEmpresa], references: [EmpresaID], onDelete: Cascade)
 
-  @@unique([PCProducto, PCComponente])
+  @@unique([PCProducto, PCComponente, PCEmpresa])
   @@map("ProductoComposicion")
 }
 

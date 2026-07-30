@@ -43,6 +43,57 @@ export default function EmpresaProductos() {
   const [editingOrderProduct, setEditingOrderProduct] = useState<EmpresaProducto | null>(null);
   const [newOrder, setNewOrder] = useState<number>(0);
 
+  // Reordenar productos (subir/bajar)
+  const [editandoOrden, setEditandoOrden] = useState(false);
+  const [ordenTemporal, setOrdenTemporal] = useState<EmpresaProducto[]>([]);
+  
+  // Iniciar modo reordenamiento
+  const iniciarReordenamiento = () => {
+    const sorted = [...productosEmpresa].sort((a, b) => (a.EPOrden || 999) - (b.EPOrden || 999));
+    setOrdenTemporal(sorted);
+    setEditandoOrden(true);
+  };
+  
+  // Mover producto arriba
+  const moverArriba = (index: number) => {
+    if (index === 0) return;
+    const newOrden = [...ordenTemporal];
+    [newOrden[index - 1], newOrden[index]] = [newOrden[index], newOrden[index - 1]];
+    setOrdenTemporal(newOrden);
+  };
+  
+  // Mover producto abajo
+  const moverAbajo = (index: number) => {
+    if (index === ordenTemporal.length - 1) return;
+    const newOrden = [...ordenTemporal];
+    [newOrden[index], newOrden[index + 1]] = [newOrden[index + 1], newOrden[index]];
+    setOrdenTemporal(newOrden);
+  };
+  
+  // Guardar nuevo orden
+  const guardarOrden = async () => {
+    try {
+      const ordenes = ordenTemporal.map((pe, idx) => ({
+        epId: pe.EPID,
+        nuevoOrden: idx + 1,
+      }));
+      
+      const response = await fetch("/api/empresa-planilla/reordenar", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ empresaId: parseInt(id!), ordenes }),
+      });
+      
+      if (!response.ok) throw new Error("Error al guardar");
+      
+      setEditandoOrden(false);
+      fetchData();
+      alert("Orden guardado exitosamente");
+    } catch (err) {
+      alert("Error al guardar el orden");
+    }
+  };
+
   useEffect(() => {
     if (id) {
       fetchData();
@@ -180,9 +231,50 @@ export default function EmpresaProductos() {
         <button onClick={() => setShowModal(true)} className="btn btn-primary">
           + Agregar Producto
         </button>
+        {!editandoOrden ? (
+          <button onClick={iniciarReordenamiento} className="btn btn-secondary" style={{ marginLeft: '10px' }}>
+            ↕ Reordenar
+          </button>
+        ) : (
+          <>
+            <button onClick={guardarOrden} className="btn btn-primary" style={{ marginLeft: '10px' }}>
+              ✓ Guardar Orden
+            </button>
+            <button onClick={() => setEditandoOrden(false)} className="btn btn-secondary" style={{ marginLeft: '5px' }}>
+              Cancelar
+            </button>
+          </>
+        )}
       </div>
 
-      {productosEmpresa.length === 0 ? (
+      {editandoOrden ? (
+        <div className="orden-edit-container">
+          <p style={{ marginBottom: '15px', color: '#666' }}>Arrastre o use las flechas para reordenar. El número de orden se asignará automáticamente.</p>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th style={{ width: '50px' }}>#</th>
+                <th>Código</th>
+                <th>Producto</th>
+                <th style={{ width: '100px' }}>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ordenTemporal.map((pe, index) => (
+                <tr key={pe.EPID}>
+                  <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{index + 1}</td>
+                  <td>{pe.producto?.ProductoCodigo || "-"}</td>
+                  <td>{pe.producto?.ProductoNombre}</td>
+                  <td>
+                    <button onClick={() => moverArriba(index)} disabled={index === 0} className="btn btn-sm" style={{ marginRight: '5px' }}>↑</button>
+                    <button onClick={() => moverAbajo(index)} disabled={index === ordenTemporal.length - 1} className="btn btn-sm">↓</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : productosEmpresa.length === 0 ? (
         <div className="no-data">
           <p>No hay productos asignados a esta empresa.</p>
           <p>Agregue productos para generar planillas.</p>

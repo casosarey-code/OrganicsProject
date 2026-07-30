@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { productosApi } from '../../api';
-import { Producto } from '../../types';
+import { productosApi, empresasApi } from '../../api';
+import { Producto, Empresa } from '../../types';
 
 interface Composicion {
   PCID: number;
   PCProducto: number;
   PCComponente: number;
   PCCantidad: number;
+  PCEmpresa: number | null;
   producto: { ProductoID: number; ProductoNombre: string };
   componente: { ProductoID: number; ProductoNombre: string };
+  empresa?: { EmpresaID: number; EmpresaNombre: string } | null;
 }
 
 interface Props {
@@ -21,6 +23,7 @@ export default function GestionComposiciones({ onBack }: Props = {}) {
   const goBack = onBack || (() => navigate('/config/productos'));
   const [composiciones, setComposiciones] = useState<Composicion[]>([]);
   const [productos, setProductos] = useState<Producto[]>([]);
+  const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -28,6 +31,7 @@ export default function GestionComposiciones({ onBack }: Props = {}) {
     PCProducto: 0,
     PCComponente: 0,
     PCCantidad: 1,
+    PCEmpresa: null as number | null,
   });
 
   const fetchData = async () => {
@@ -35,11 +39,12 @@ export default function GestionComposiciones({ onBack }: Props = {}) {
     setError('');
     try {
       const token = localStorage.getItem('token');
-      const [compRes, prodRes] = await Promise.all([
+      const [compRes, prodRes, empRes] = await Promise.all([
         fetch(`/api/productos/composicion`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
         productosApi.getAll(),
+        empresasApi.getAll({ estado: 'A' }),
       ]);
       const compData = await compRes.json();
       let prodData = [];
@@ -48,8 +53,10 @@ export default function GestionComposiciones({ onBack }: Props = {}) {
       } else if (Array.isArray(prodRes)) {
         prodData = prodRes;
       }
+      const empData = Array.isArray(empRes) ? empRes : (empRes as any)?.data || [];
       setComposiciones(Array.isArray(compData) ? compData : []);
       setProductos(Array.isArray(prodData) ? prodData : []);
+      setEmpresas(empData);
     } catch (err: any) {
       console.error('Error completo:', err);
       setError(err.message || 'Error al cargar datos');
@@ -79,7 +86,7 @@ export default function GestionComposiciones({ onBack }: Props = {}) {
         throw new Error(data.error || 'Error al crear');
       }
       setShowForm(false);
-      setFormData({ PCProducto: 0, PCComponente: 0, PCCantidad: 1 });
+      setFormData({ PCProducto: 0, PCComponente: 0, PCCantidad: 1, PCEmpresa: null });
       // Recargar solo los datos para mantener la vista
       fetchData();
     } catch (err: any) {
@@ -188,6 +195,23 @@ export default function GestionComposiciones({ onBack }: Props = {}) {
                   Ejemplo: 0.25 para 1/4, 0.5 para 1/2, 1 para entero
                 </small>
               </div>
+              <div className="form-group">
+                <label>Empresa (opcional)</label>
+                <select
+                  value={formData.PCEmpresa || ''}
+                  onChange={(e) => setFormData({ ...formData, PCEmpresa: e.target.value ? parseInt(e.target.value) : null })}
+                >
+                  <option value="">Todas las empresas</option>
+                  {empresas.map((emp) => (
+                    <option key={emp.EmpresaID} value={emp.EmpresaID}>
+                      {emp.EmpresaNombre}
+                    </option>
+                  ))}
+                </select>
+                <small style={{ color: '#666' }}>
+                  Si no selecciona empresa, la composición aplica a todas
+                </small>
+              </div>
               <div className="modal-actions">
                 <button type="button" onClick={() => setShowForm(false)} className="btn btn-secondary">
                   Cancelar
@@ -214,11 +238,18 @@ export default function GestionComposiciones({ onBack }: Props = {}) {
               <th>Producto</th>
               <th>Cantidad</th>
               <th>Suma a</th>
+              <th>Empresa</th>
               <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
-            {composiciones.map((comp) => (
+            {composiciones.map((comp) => {
+              const empresaNombre = comp.PCEmpresa 
+                ? empresas.find(e => e.EmpresaID === comp.PCEmpresa)?.EmpresaNombre || `ID: ${comp.PCEmpresa}`
+                : 'Todas las empresas';
+              const empresaStyle = comp.PCEmpresa ? { color: '#27ae60' } : { color: '#7f8c8d', fontStyle: 'italic' };
+              
+              return (
               <tr key={comp.PCID}>
                 <td>{comp.producto?.ProductoNombre || `ID: ${comp.PCProducto}`}</td>
                 <td>
@@ -236,12 +267,42 @@ export default function GestionComposiciones({ onBack }: Props = {}) {
                 </td>
                 <td>{comp.componente?.ProductoNombre || `ID: ${comp.PCComponente}`}</td>
                 <td>
+                  <select
+                    value={comp.PCEmpresa || ''}
+                    onChange={async (e) => {
+                      const newEmpresa = e.target.value ? parseInt(e.target.value) : null;
+                      try {
+                        await fetch(`/api/productos/composicion/${comp.PCID}`, {
+                          method: 'PUT',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${localStorage.getItem('token')}`,
+                          },
+                          body: JSON.stringify({ PCEmpresa: newEmpresa }),
+                        });
+                        fetchData();
+                      } catch (err: any) {
+                        alert(err.response?.data?.error || 'Error al actualizar');
+                      }
+                    }}
+                    style={empresaStyle}
+                  >
+                    <option value="">Todas las empresas</option>
+                    {empresas.map((emp) => (
+                      <option key={emp.EmpresaID} value={emp.EmpresaID}>
+                        {emp.EmpresaNombre}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td>
                   <button onClick={() => handleDelete(comp.PCID)} className="btn btn-sm btn-danger">
                     Eliminar
                   </button>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       )}

@@ -1,0 +1,1 @@
+0 6 * * * bash /opt/backend/generar_planillas.sh >> /var/log/cron_generar_planillas.log 2>&1

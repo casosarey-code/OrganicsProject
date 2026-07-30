@@ -27,6 +27,7 @@ router.post('/crear-planillas-masivas', authJwt, async (req: AuthRequest, res: R
         empresaProductos: {
           where: { EPActivo: true },
           include: { producto: true },
+          orderBy: { EPOrden: 'asc' },
         },
       },
     });
@@ -68,7 +69,7 @@ router.post('/crear-planillas-masivas', authJwt, async (req: AuthRequest, res: R
         // 3. Crear la planilla con los datos especificados
         const planilla = await prisma.planilla.create({
           data: {
-            PlanillaFecha: new Date(), // ServerNow()
+            PlanillaFecha: new Date(new Date().setHours(6, 0, 0, 0)), // 06:00:00
             PlanillaPuntoVenta: empresa.EmpresaID,
             PlanillaCreaUsuario: userId,
             PlanillaCreaFecha: new Date(),
@@ -79,6 +80,7 @@ router.post('/crear-planillas-masivas', authJwt, async (req: AuthRequest, res: R
             detalles: empresa.empresaProductos.length > 0 ? {
               create: empresa.empresaProductos.map((ep) => ({
                 PDProducto: ep.EPProducto,
+                PDOrden: ep.EPOrden,
                 PDCantInicial: 0,
                 PDCantCompra: 0,
                 PDCantAjuste: 0,
